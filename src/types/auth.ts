@@ -3,6 +3,12 @@ export interface User {
   email: string;
   username?: string;
   token: string;
+  name?: string;
+  profilePicture?: string;
+  bio?: string;
+  posts?: number;
+  followers?: number;
+  following?: number;
   // Add other user-related fields as needed
 }
 

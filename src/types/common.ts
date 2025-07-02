@@ -1,16 +1,5 @@
 // src/types/common.ts
 
-export type User = {
-  id: string;
-  name: string;
-  email: string;
-};
+// Placeholder for common utility functions
 
-export type Mentor = {
-  id: string;
-  name: string;
-  domain: string;
-  availability: string;
-  price: string;
-  rating: number;
-}; 
+// Removed duplicate User and Mentor types. They are now defined in auth.ts and mentor.ts respectively. 
