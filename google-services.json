@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "784293794246",
+    "project_id": "ai-companion-af7a4",
+    "storage_bucket": "ai-companion-af7a4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:784293794246:android:7e0d2ebbf02177b351e2c7",
+        "android_client_info": {
+          "package_name": "com.aihub.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYSJhRb3UhnObpVGtb6MAF9SADGojPIs4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -17,6 +17,12 @@ logs/
 .env.test.local
 .env.production.local
 
+# Firebase service account keys (security)
+backend/src/config/serviceAccountKey.json
+**/serviceAccountKey.json
+**/google-services.json
+**/GoogleService-Info.plist
+
 # Expo
 .expo/
 web-build/

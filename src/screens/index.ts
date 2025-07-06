@@ -6,6 +6,7 @@ export { default as SplashScreen } from './Auth/Splash';
 
 export { default as MentorListScreen } from './Mentors/MentorList';
 export { default as MentorProfileScreen } from './Mentors/MentorProfile';
+export { default as BookedSessionsScreen } from './Mentors/BookedSessions';
 
 export { default as ForumHomeScreen } from './Community/ForumHome';
 export { default as ThreadViewScreen } from './Community/ThreadView';
@@ -19,5 +20,4 @@ export { default as UploadPrototypeScreen } from './Prototype/UploadPrototype';
 export { default as FeedbackScreen } from './Prototype/FeedbackScreen';
 
 export { default as UserProfileScreen } from './Profile/UserProfile';
-export { default as EditProfileScreen } from './Profile/EditProfile';
-export { default as WalletScreen } from './Profile/Wallet'; 
+export { default as EditProfileScreen } from './Profile/EditProfile'; 

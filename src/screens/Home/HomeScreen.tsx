@@ -1,47 +1,263 @@
 import React from 'react';
-import { SafeAreaView, ScrollView, Text, StyleSheet, View, TouchableOpacity } from 'react-native';
-import { Colors } from '../../constants/Colors';
-import Button from '../../components/Button';
+import { SafeAreaView, ScrollView, Text, StyleSheet, View, FlatList, ActivityIndicator } from 'react-native';
+import { useNavigation, NavigationProp, NavigatorScreenParams } from '@react-navigation/native';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { StackNavigationProp } from '@react-navigation/stack';
+import { ParamListBase } from '@react-navigation/routers';
+import { Ionicons } from '@expo/vector-icons';
 
-const HomeScreen = () => {
+import { Colors, AppRoutes } from '../../constants';
+import { AppButton, MentorCard, PostCard, ProductTile } from '../../components';
+import { Mentor, Post, Product } from '../../types';
+import usePaginatedData from '../../hooks/usePaginatedData';
+
+// Define your navigation parameter lists
+type AuthStackParamList = {
+  [AppRoutes.Splash]: undefined;
+  [AppRoutes.Auth]: undefined; // Or { screen: 'Login' }; if Auth is a placeholder
+  Register: undefined;
+};
+
+type HomeStackParamList = {
+  [AppRoutes.Home]: undefined;
+};
+
+type MentorsStackParamList = {
+  [AppRoutes.Mentors]: undefined;
+  MentorProfile: { mentorId: string };
+};
+
+type CommunityStackParamList = {
+  [AppRoutes.Community]: undefined;
+  ThreadView: { postId: string };
+  CreatePost: undefined;
+};
+
+type MarketplaceStackParamList = {
+  [AppRoutes.Marketplace]: undefined;
+  ProductDetails: { productId: string };
+  UploadProduct: undefined;
+};
+
+type PrototypeStackParamList = {
+  [AppRoutes.Prototype]: undefined;
+  FeedbackScreen: { prototypeId: string };
+  UploadPrototype: undefined; // Add this if you navigate directly here
+};
+
+type ProfileStackParamList = {
+  [AppRoutes.Profile]: undefined;
+  EditProfile: undefined;
+};
+
+// Define the Root Tab Navigator's param list to include nested screen navigation
+export type RootTabParamList = {
+  [AppRoutes.Home]: undefined;
+  [AppRoutes.Mentors]: NavigatorScreenParams<MentorsStackParamList>;
+  [AppRoutes.Community]: NavigatorScreenParams<CommunityStackParamList>;
+  [AppRoutes.Marketplace]: NavigatorScreenParams<MarketplaceStackParamList>;
+  [AppRoutes.Prototype]: NavigatorScreenParams<PrototypeStackParamList>;
+  [AppRoutes.Profile]: NavigatorScreenParams<ProfileStackParamList>;
+};
+
+// Define the navigation prop for HomeScreen
+type HomeScreenNavigationProp = NavigationProp<
+  RootTabParamList,
+  keyof RootTabParamList // The top-level routes that HomeScreen can navigate to
+>;
+
+const mockMentors: Mentor[] = [
+  {
+    id: '101',
+    name: 'Dr. Anya Sharma',
+    title: 'AI Ethics & Governance',
+    bio: 'Specializing in responsible AI development and policy.',
+    imageUrl: 'https://via.placeholder.com/100/FF5733/FFFFFF?text=AS',
+  },
+  {
+    id: '102',
+    name: 'Mark Jansen',
+    title: 'Machine Learning Engineer',
+    bio: 'Expert in natural language processing and computer vision.',
+    imageUrl: 'https://via.placeholder.com/100/33FF57/FFFFFF?text=MJ',
+  },
+];
+
+const mockTrendingPosts: Post[] = [
+  {
+    id: '201',
+    title: 'The Future of Generative AI in Art',
+    content: 'Exploring the new frontiers where AI meets creativity.',
+    authorId: 'userArt',
+    authorName: 'CreativeAI',
+    createdAt: Date.now() - 3600000 * 24 * 2,
+  },
+  {
+    id: '202',
+    title: 'Decentralized AI: A New Paradigm?',
+    content: 'Discussing the implications of blockchain on AI development.',
+    authorId: 'userDecentral',
+    authorName: 'BlockBrain',
+    createdAt: Date.now() - 3600000 * 24 * 3,
+  },
+  {
+    id: '203',
+    title: 'AI in Healthcare: A Revolution in Progress',
+    content: 'Examining the impact of AI on diagnostics and patient care.',
+    authorId: 'userHealth',
+    authorName: 'MediMind',
+    createdAt: Date.now() - 3600000 * 24 * 4,
+  },
+  {
+    id: '204',
+    title: 'The Role of AI in Climate Change Mitigation',
+    content: 'How artificial intelligence can help combat environmental challenges.',
+    authorId: 'userClimate',
+    authorName: 'EcoAI',
+    createdAt: Date.now() - 3600000 * 24 * 5,
+  },
+  {
+    id: '205',
+    title: 'Personalized Learning AI: A New Paradigm?',
+    content: 'Discussing the implications of blockchain on AI development.',
+    authorId: 'userDecentral',
+    authorName: 'BlockBrain',
+    createdAt: Date.now() - 3600000 * 24 * 6,
+  },
+  {
+    id: '206',
+    title: 'AI in Healthcare: A Revolution in Progress',
+    content: 'Examining the impact of AI on diagnostics and patient care.',
+    authorId: 'userHealth',
+    authorName: 'MediMind',
+    createdAt: Date.now() - 3600000 * 24 * 7,
+  },
+  {
+    id: '207',
+    title: 'The Role of AI in Climate Change Mitigation',
+    content: 'How artificial intelligence can help combat environmental challenges.',
+    authorId: 'userClimate',
+    authorName: 'EcoAI',
+    createdAt: Date.now() - 3600000 * 24 * 8,
+  },
+];
+
+const mockTrendingPrototypes: Product[] = [
+  {
+    id: '301',
+    name: 'Emotion Recognition API',
+    description: 'A new API that analyzes facial expressions for sentiment.',
+    price: 0,
+    imageUrl: 'https://via.placeholder.com/150/3366FF/FFFFFF?text=ER',
+  },
+  {
+    id: '302',
+    name: 'Personalized Learning AI',
+    description: 'Adaptive AI platform for customized educational paths.',
+    price: 0,
+    imageUrl: 'https://via.placeholder.com/150/FF33CC/FFFFFF?text=PL',
+  },
+];
+
+const mockEvents = [
+  {
+    id: 'e1',
+    title: 'AI Ethics Summit',
+    date: 'Nov 15-17, 2023',
+    location: 'Virtual',
+  },
+  {
+    id: 'e2',
+    title: 'Robotics & AI Webinar',
+    date: 'Dec 1, 2023',
+    location: 'Online',
+  },
+];
+
+const HomeScreen: React.FC = () => {
+  const navigation = useNavigation<HomeScreenNavigationProp>();
+
+  // Simulate fetching posts from an API with pagination
+  const fetchPosts = async (page: number, limit: number): Promise<Post[]> => {
+    // In a real app, you'd make an API call here, e.g., communityApi.getThreads(page, limit)
+    console.log(`Fetching posts - Page: ${page}, Limit: ${limit}`);
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedPosts = mockTrendingPosts.slice(startIndex, endIndex);
+    return new Promise((resolve) => setTimeout(() => resolve(paginatedPosts), 1000)); // Simulate network delay
+  };
+
+  const { data: trendingPosts, loading: loadingPosts, hasMore: hasMorePosts, loadMore: loadMorePosts } = usePaginatedData({ fetchData: fetchPosts, initialLimit: 3 });
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollViewContent}>
-        <Text style={styles.header}>AI Companion Home</Text>
-
-        {/* Personalized Feed */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Personalized Feed</Text>
-          <Text style={styles.sectionContent}>
-            - Latest AI news: Lorem ipsum...
-            - Mentor highlights: John Doe, AI Ethics Specialist
-            - Event suggestions: AI for Good Summit
-          </Text>
-        </View>
-
-        {/* Upcoming Hackathons / Webinars */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upcoming Events</Text>
-          <Text style={styles.sectionContent}>
-            - Hackathon: AI for Climate Change (Oct 26-28)
-            - Webinar: Deep Learning Fundamentals (Nov 5)
-          </Text>
-        </View>
-
-        {/* Trending Discussions / Prototypes */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trending</Text>
-          <Text style={styles.sectionContent}>
-            - Discussion: Future of AGI
-            - Prototype: AI-powered healthcare diagnostic tool
-          </Text>
-        </View>
+      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+        <Text style={styles.header}>AI Hub</Text>
 
         {/* Quick Access Buttons */}
         <View style={styles.quickAccessContainer}>
-          <Button title="Post Idea" onPress={() => console.log('Post Idea')} style={styles.button} textStyle={styles.buttonText} />
-          <Button title="Upload Prototype" onPress={() => console.log('Upload Prototype')} style={styles.button} textStyle={styles.buttonText} />
+          <AppButton
+            title="Post Idea"
+            onPress={() => navigation.navigate(AppRoutes.Community, { screen: 'CreatePost' })}
+            color={Colors.primary}
+          />
+          <AppButton
+            title="Upload Prototype"
+            onPress={() => navigation.navigate(AppRoutes.Prototype, { screen: 'UploadPrototype' })}
+            color={Colors.accent}
+          />
         </View>
+
+        {/* Personalized Feed - Mentor Highlights */}
+        <Text style={styles.sectionTitle}>Featured Mentors</Text>
+        <FlatList
+          data={mockMentors}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <MentorCard mentor={item} />}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalListContent}
+        />
+
+        {/* Upcoming Events */}
+        <Text style={styles.sectionTitle}>Upcoming Events</Text>
+        <View style={styles.sectionContainer}>
+          {mockEvents.map((event) => (
+            <View key={event.id} style={styles.eventCard}>
+              <Text style={styles.eventTitle}>{event.title}</Text>
+              <Text style={styles.eventMeta}>{event.date} | {event.location}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Trending Discussions */}
+        <Text style={styles.sectionTitle}>Trending Discussions</Text>
+        <FlatList
+          data={trendingPosts}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <PostCard post={item} />}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalListContent}
+          onEndReached={loadMorePosts}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={() => (
+            loadingPosts && hasMorePosts ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : null
+          )}
+        />
+
+        {/* Trending Prototypes */}
+        <Text style={styles.sectionTitle}>Trending Prototypes</Text>
+        <FlatList
+          data={mockTrendingPrototypes}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <ProductTile product={item} />}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalListContent}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -53,7 +269,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   scrollViewContent: {
-    padding: 15,
+    paddingTop: 15,
+    paddingHorizontal: 15,
   },
   header: {
     fontSize: 28,
@@ -62,7 +279,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: Colors.text,
   },
-  section: {
+  quickAccessContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Colors.text,
+    marginTop: 15,
+    marginBottom: 10,
+  },
+  horizontalListContent: {
+    paddingRight: 15,
+  },
+  sectionContainer: {
     backgroundColor: Colors.white,
     borderRadius: 10,
     padding: 15,
@@ -73,37 +305,20 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+  eventCard: {
     marginBottom: 10,
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray,
+  },
+  eventTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: Colors.darkGray,
   },
-  sectionContent: {
-    fontSize: 16,
+  eventMeta: {
+    fontSize: 14,
     color: Colors.lightText,
-    lineHeight: 24,
-  },
-  quickAccessContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 25,
-    marginHorizontal: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });
 

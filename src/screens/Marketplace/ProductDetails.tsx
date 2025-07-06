@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, Alert } from 'react-native';
 import { RouteProp } from '@react-navigation/native';
 import { AppButton } from '../../components';
 import { Product } from '../../types';
@@ -36,7 +36,8 @@ const ProductDetails: React.FC<ProductDetailsProps> = ({ route }) => {
         {product.category && <Text style={styles.productCategory}>Category: {product.category}</Text>}
         {/* Add more product details as needed */}
       </View>
-      <AppButton title="Add to Cart" onPress={() => { /* Handle add to cart */ }} />
+      <AppButton title="Add to Cart" onPress={() => Alert.alert('Add to Cart', `Added ${product.name} to cart.`)} />
+      <AppButton title="Buy Now" onPress={() => Alert.alert('Buy Now', `Buying ${product.name} now!`)} buttonStyle={styles.buyNowButton} />
     </ScrollView>
   );
 };
@@ -84,6 +85,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 5,
+  },
+  buyNowButton: {
+    backgroundColor: 'red',
+    marginTop: 10,
   },
 });
 

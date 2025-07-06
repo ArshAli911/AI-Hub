@@ -6,15 +6,17 @@ interface AppButtonProps {
   title: string;
   onPress: () => void;
   color?: string;
+  buttonStyle?: object;
+  textStyle?: object;
 }
 
-const AppButton: React.FC<AppButtonProps> = ({ title, onPress, color = Colors.primary }) => {
+const AppButton: React.FC<AppButtonProps> = ({ title, onPress, color = Colors.primary, buttonStyle, textStyle }) => {
   return (
     <TouchableOpacity
-      style={[styles.button, { backgroundColor: color }]} 
+      style={[styles.button, { backgroundColor: color }, buttonStyle]} 
       onPress={onPress}
     >
-      <Text style={styles.text}>{title}</Text>
+      <Text style={[styles.text, textStyle]}>{title}</Text>
     </TouchableOpacity>
   );
 };

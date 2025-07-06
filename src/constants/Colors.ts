@@ -8,4 +8,8 @@ export const Colors = {
   gray: '#E0E0E0',
   darkGray: '#777777',
   error: '#B00020',
+  success: '#4CAF50',
+  warning: '#FF9800',
+  border: '#E0E0E0',
+  shadow: '#000000',
 }; 

@@ -6,5 +6,6 @@ export const AppRoutes = {
   Mentors: 'Mentors',
   Profile: 'Profile',
   Prototype: 'Prototype',
+  Splash: 'Splash',
   // Add more app routes as needed
 }; 

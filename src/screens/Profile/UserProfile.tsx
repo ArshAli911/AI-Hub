@@ -51,11 +51,31 @@ const UserProfile: React.FC<UserProfileProps> = ({ navigation }) => {
 
       <View style={styles.actionsContainer}>
         <AppButton title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} /> {/* Update 'EditProfile' with actual route */}
-        <AppButton title="My Wallet" onPress={() => navigation.navigate('Wallet')} /> {/* Update 'Wallet' with actual route */}
         <AppButton title="Logout" onPress={() => { /* Handle logout */ }} color="red" />
       </View>
 
-      {/* Add user's posts, prototypes, or marketplace listings here */}
+      {/* Navigation to User's Posts, Projects, Feedback */}
+      <View style={styles.contentSection}>
+        <TouchableOpacity style={styles.contentOption} onPress={() => console.log('Navigate to My Posts')}> {/* Link to user's posts */}
+          <Text style={styles.contentOptionText}>My Posts</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.contentOption} onPress={() => navigation.navigate('PrototypeScreen', { userId: user.id })}> {/* Link to user's prototypes */}
+          <Text style={styles.contentOptionText}>My Prototypes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.contentOption} onPress={() => console.log('Navigate to My Feedback')}> {/* Link to user's feedback */}
+          <Text style={styles.contentOptionText}>My Feedback</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Saved Content / Preferences */}
+      <View style={styles.contentSection}>
+        <TouchableOpacity style={styles.contentOption} onPress={() => console.log('Navigate to Saved Content')}> {/* Link to saved content */}
+          <Text style={styles.contentOptionText}>Saved Content</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.contentOption} onPress={() => console.log('Navigate to Preferences')}> {/* Link to preferences */}
+          <Text style={styles.contentOptionText}>Preferences</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 };
@@ -118,6 +138,27 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     padding: 10,
+  },
+  contentSection: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginHorizontal: 10,
+    marginBottom: 10,
+    padding: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  contentOption: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  contentOptionText: {
+    fontSize: 16,
+    color: '#333',
   },
 });
 

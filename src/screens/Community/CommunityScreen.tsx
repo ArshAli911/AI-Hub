@@ -1,30 +1,41 @@
 // src/screens/Community/CommunityScreen.tsx
 
 import React from 'react';
-import { SafeAreaView, ScrollView, Text, StyleSheet, View } from 'react-native';
+import { SafeAreaView, ScrollView, Text, StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Colors } from '../../constants/Colors';
 
-const CommunityScreen = () => {
+interface CommunityScreenProps {
+  navigation: any;
+}
+
+const CommunityScreen: React.FC<CommunityScreenProps> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollViewContent}>
         <Text style={styles.header}>AI Community Hub</Text>
 
-        {/* Trending Discussions */}
+        {/* Public Threads / Forum Home */}
+        <TouchableOpacity style={styles.section} onPress={() => navigation.navigate('ForumHome')}>
+          <Text style={styles.sectionTitle}>Public Forum Threads</Text>
+          <Text style={styles.sectionContent}>
+            Browse and discuss public AI topics, ask questions, and share insights.
+          </Text>
+        </TouchableOpacity>
+
+        {/* Private Groups */}
+        <TouchableOpacity style={styles.section} onPress={() => navigation.navigate('GroupList')}> {/* Assuming GroupList is the route for private groups */}
+          <Text style={styles.sectionTitle}>Private Groups</Text>
+          <Text style={styles.sectionContent}>
+            Join or create private groups for focused discussions with specific members.
+          </Text>
+        </TouchableOpacity>
+
+        {/* Trending Discussions - (Optional, could be integrated into ForumHome) */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Trending Discussions</Text>
           <Text style={styles.sectionContent}>
             - Discussion: Generative AI in Art
             - Discussion: Ethical AI Development
-          </Text>
-        </View>
-
-        {/* Groups and Forums */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Groups & Forums</Text>
-          <Text style={styles.sectionContent}>
-            - Group: Machine Learning Enthusiasts
-            - Forum: AI Ethics Roundtable
           </Text>
         </View>
 
