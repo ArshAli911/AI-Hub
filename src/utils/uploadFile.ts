@@ -1,18 +1,41 @@
-// src/utils/uploadFile.ts
-
-// Placeholder for a generic file upload utility function
+import { storage } from '../services/firebase';
+import { Platform } from 'react-native';
+import firebase from 'firebase/app';
+import 'firebase/storage'; // Import for side effects to extend firebase namespace
 
 export const uploadFile = async (fileUri: string, fileName: string, fileType: string): Promise<string> => {
-  console.log(`Uploading file: ${fileName} (${fileType}) from URI: ${fileUri} (placeholder)`);
-  // In a real application, you would implement the actual file upload logic here,
-  // possibly using a service like Firebase Storage, AWS S3, or a custom backend API.
-  // This might involve:
-  // 1. Reading the file from the fileUri.
-  // 2. Creating a FormData object for a multipart/form-data POST request.
-  // 3. Sending the request to your backend.
-  // 4. Handling progress and errors.
-  // 5. Returning the public URL of the uploaded file.
+  try {
+    console.log(`Uploading file: ${fileName} (${fileType}) from URI: ${fileUri}`);
 
-  // For now, return a mock URL
-  return `https://your-storage-url.com/${fileName}`;
+    const response = await fetch(fileUri);
+    const blob = await response.blob();
+
+    const storageRef = storage.ref();
+    const fileRef = storageRef.child(`uploads/${Date.now()}_${fileName}`);
+
+    const uploadTask = fileRef.put(blob);
+
+    return new Promise((resolve, reject) => {
+      uploadTask.on(
+        'state_changed',
+        (snapshot: firebase.storage.UploadTaskSnapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log('Upload is ' + progress + '% done');
+          // You can add a progress callback here if needed for UI updates
+        },
+        (error: firebase.FirebaseError) => {
+          console.error('File upload error:', error);
+          reject(error);
+        },
+        async () => {
+          const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+          console.log('File uploaded successfully. Download URL:', downloadURL);
+          resolve(downloadURL);
+        }
+      );
+    });
+  } catch (error) {
+    console.error('Error in uploadFile utility:', error);
+    throw error;
+  }
 }; 

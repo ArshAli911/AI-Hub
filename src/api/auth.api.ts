@@ -52,7 +52,7 @@ export const firebaseAuthApi = {
   },
 
   // Add more authentication-related functions here if needed
-};
+}; 
 
 export interface SignUpRequest {
   uid: string;

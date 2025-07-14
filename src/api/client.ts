@@ -36,7 +36,7 @@ class ApiClient {
     this.client = axios.create({
       baseURL: this.baseURL,
       timeout: 30000,
-      headers: {
+  headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'User-Agent': `AI-Hub-App/${Platform.OS}`
@@ -77,12 +77,12 @@ class ApiClient {
         // Add request ID for tracking
         config.headers['X-Request-ID'] = this.generateRequestId();
 
-        return config;
-      },
-      (error) => {
-        return Promise.reject(error);
-      }
-    );
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
     // Response interceptor
     this.client.interceptors.response.use(

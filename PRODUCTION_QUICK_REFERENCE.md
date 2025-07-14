@@ -136,20 +136,6 @@ server {
 }
 ```
 
-## 📱 App Store Deployment
-
-### Android (Google Play)
-1. Build AAB: `expo build:android --type app-bundle`
-2. Upload to Google Play Console
-3. Configure store listing
-4. Submit for review
-
-### iOS (App Store)
-1. Build Archive: `expo build:ios --type archive`
-2. Upload to App Store Connect
-3. Configure store listing
-4. Submit for review
-
 ## 🔍 Monitoring & Debugging
 
 ### Check Backend Status

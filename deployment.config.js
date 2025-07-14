@@ -239,22 +239,6 @@ module.exports = {
           contentRating: 'Everyone',
         },
       },
-      app_store: {
-        enabled: true,
-        track: 'TestFlight', // TestFlight, App Store
-        releaseNotes: {
-          'en-US': 'Bug fixes and performance improvements',
-          'es-ES': 'Correcciones de errores y mejoras de rendimiento',
-        },
-        metadata: {
-          name: 'AI Hub',
-          subtitle: 'AI Learning Platform',
-          description: 'Connect with mentors, share prototypes, and learn AI technologies.',
-          keywords: ['AI', 'learning', 'mentors', 'prototypes'],
-          category: 'Education',
-          contentRating: '4+',
-        },
-      },
     },
     firebase: {
       hosting: {

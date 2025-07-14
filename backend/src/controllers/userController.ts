@@ -73,7 +73,7 @@ export const createUser = async (req: Request, res: Response) => {
 
 export const getUserById = async (req: Request, res: Response) => {
   try {
-    const { uid } = req.params;
+  const { uid } = req.params;
     const requestingUser = req.user;
 
     // Check if user is requesting their own data or has admin permissions
@@ -386,7 +386,7 @@ export const searchUsers = async (req: Request, res: Response) => {
 
 export const updateUserStats = async (req: Request, res: Response) => {
   try {
-    const { uid } = req.params;
+  const { uid } = req.params;
     const { stats } = req.body;
     const requestingUser = req.user;
 
