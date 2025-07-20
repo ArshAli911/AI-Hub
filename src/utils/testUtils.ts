@@ -1,6 +1,6 @@
+import React from 'react';
 import { render } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '../context/AuthContext';
 import { ThemeProvider } from '../context/ThemeContext';
 import { UserProvider } from '../context/UserProvider';
@@ -237,33 +237,16 @@ export const renderWithProviders = (
   component: React.ReactElement,
   options: {
     initialRoute?: string;
-    queryClient?: QueryClient;
   } = {}
 ) => {
-  const queryClient = options.queryClient || new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        cacheTime: 0,
-      },
-      mutations: {
-        retry: false,
-      },
-    },
-  });
-
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <AuthProvider>
-          <UserProvider>
-            <NavigationContainer>
-              {component}
-            </NavigationContainer>
-          </UserProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    React.createElement(ThemeProvider, null,
+      React.createElement(AuthProvider, null,
+        React.createElement(UserProvider, null,
+          React.createElement(NavigationContainer, null, component)
+        )
+      )
+    )
   );
 };
 

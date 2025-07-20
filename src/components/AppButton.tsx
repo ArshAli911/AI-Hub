@@ -8,13 +8,15 @@ interface AppButtonProps {
   color?: string;
   buttonStyle?: object;
   textStyle?: object;
+  disabled?: boolean; // Add disabled prop
 }
 
-const AppButton: React.FC<AppButtonProps> = ({ title, onPress, color = Colors.primary, buttonStyle, textStyle }) => {
+const AppButton: React.FC<AppButtonProps> = ({ title, onPress, color = Colors.primary, buttonStyle, textStyle, disabled = false }) => {
   return (
     <TouchableOpacity
-      style={[styles.button, { backgroundColor: color }, buttonStyle]} 
+      style={[styles.button, { backgroundColor: color }, buttonStyle, disabled && styles.disabledButton]} 
       onPress={onPress}
+      disabled={disabled}
     >
       <Text style={[styles.text, textStyle]}>{title}</Text>
     </TouchableOpacity>
@@ -35,6 +37,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textTransform: 'uppercase',
     fontWeight: 'bold',
+  },
+  disabledButton: {
+    opacity: 0.6, // Visual indication for disabled state
   },
 });
 

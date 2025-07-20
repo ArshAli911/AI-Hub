@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { userModel, User, UserRole, UserPermission } from '../models/User';
 import { getAuth } from 'firebase-admin/auth';
 import logger from '../services/loggerService';
+import { updateUserSettingsService, updateUserPrivacySettingsService, followUserService, unfollowUserService, addNotificationService, getNotificationsService, markNotificationAsReadService, updateUserAvatarService } from '../services/userService';
 
 export const createUser = async (req: Request, res: Response) => {
   try {
@@ -481,5 +482,187 @@ export const getUserProfile = async (req: Request, res: Response) => {
       error: 'InternalServerError',
       message: 'Failed to fetch user profile'
     });
+  }
+}; 
+
+export const updateUserSettings = async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.params;
+    const requestingUser = req.user;
+    const settings = req.body;
+
+    if (requestingUser?.uid !== uid) {
+      return res.status(403).json({
+        error: 'ForbiddenError',
+        message: 'You can only update your own settings'
+      });
+    }
+
+    await updateUserSettingsService(uid, settings);
+    logger.info(`User settings updated for user: ${uid}`);
+    res.json({ message: 'User settings updated successfully' });
+  } catch (error) {
+    logger.error('Error updating user settings:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to update user settings' });
+  }
+};
+
+export const updateUserPrivacySettings = async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.params;
+    const requestingUser = req.user;
+    const privacySettings = req.body;
+
+    if (requestingUser?.uid !== uid) {
+      return res.status(403).json({
+        error: 'ForbiddenError',
+        message: 'You can only update your own privacy settings'
+      });
+    }
+
+    await updateUserPrivacySettingsService(uid, privacySettings);
+    logger.info(`User privacy settings updated for user: ${uid}`);
+    res.json({ message: 'User privacy settings updated successfully' });
+  } catch (error) {
+    logger.error('Error updating user privacy settings:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to update user privacy settings' });
+  }
+};
+
+export const followUser = async (req: Request, res: Response) => {
+  try {
+    const { id: followingId } = req.params; // ID of the user to follow
+    const requestingUser = req.user; // The user who is initiating the follow
+
+    if (!requestingUser) {
+      return res.status(401).json({ error: 'UnauthorizedError', message: 'Authentication required' });
+    }
+
+    if (requestingUser.uid === followingId) {
+      return res.status(400).json({ error: 'BadRequestError', message: 'Cannot follow yourself' });
+    }
+
+    const targetUser = await userModel.getUserById(followingId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'NotFoundError', message: 'User to follow not found' });
+    }
+
+    await followUserService(requestingUser.uid, followingId);
+    logger.info(`User ${requestingUser.uid} followed ${followingId}`);
+    res.json({ message: 'User followed successfully' });
+  } catch (error) {
+    logger.error('Error following user:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to follow user' });
+  }
+};
+
+export const unfollowUser = async (req: Request, res: Response) => {
+  try {
+    const { id: followingId } = req.params; // ID of the user to unfollow
+    const requestingUser = req.user; // The user who is initiating the unfollow
+
+    if (!requestingUser) {
+      return res.status(401).json({ error: 'UnauthorizedError', message: 'Authentication required' });
+    }
+
+    if (requestingUser.uid === followingId) {
+      return res.status(400).json({ error: 'BadRequestError', message: 'Cannot unfollow yourself' });
+    }
+
+    const targetUser = await userModel.getUserById(followingId);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'NotFoundError', message: 'User to unfollow not found' });
+    }
+
+    await unfollowUserService(requestingUser.uid, followingId);
+    logger.info(`User ${requestingUser.uid} unfollowed ${followingId}`);
+    res.json({ message: 'User unfollowed successfully' });
+  } catch (error) {
+    logger.error('Error unfollowing user:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to unfollow user' });
+  }
+};
+
+export const addNotification = async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.params;
+    const requestingUser = req.user;
+    const notification = req.body;
+
+    // Only allow users to add notifications for themselves or admins for any user
+    if (requestingUser?.uid !== uid && requestingUser?.role !== UserRole.ADMIN) {
+      return res.status(403).json({ error: 'ForbiddenError', message: 'Insufficient permissions' });
+    }
+
+    await addNotificationService(uid, notification);
+    logger.info(`Notification added for user: ${uid}`);
+    res.status(201).json({ message: 'Notification added successfully' });
+  } catch (error) {
+    logger.error('Error adding notification:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to add notification' });
+  }
+};
+
+export const getNotifications = async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.params;
+    const requestingUser = req.user;
+
+    // Only allow users to get their own notifications or admins for any user
+    if (requestingUser?.uid !== uid && requestingUser?.role !== UserRole.ADMIN) {
+      return res.status(403).json({ error: 'ForbiddenError', message: 'Insufficient permissions' });
+    }
+
+    const notifications = await getNotificationsService(uid);
+    logger.info(`Notifications retrieved for user: ${uid}`);
+    res.json({ message: 'Notifications retrieved successfully', notifications });
+  } catch (error) {
+    logger.error('Error fetching notifications:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to fetch notifications' });
+  }
+};
+
+export const markNotificationAsRead = async (req: Request, res: Response) => {
+  try {
+    const { uid, notificationId } = req.params;
+    const requestingUser = req.user;
+
+    // Only allow users to mark their own notifications as read or admins for any user
+    if (requestingUser?.uid !== uid && requestingUser?.role !== UserRole.ADMIN) {
+      return res.status(403).json({ error: 'ForbiddenError', message: 'Insufficient permissions' });
+    }
+
+    await markNotificationAsReadService(uid, notificationId);
+    logger.info(`Notification ${notificationId} marked as read for user ${uid}`);
+    res.json({ message: 'Notification marked as read successfully' });
+  } catch (error) {
+    logger.error('Error marking notification as read:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to mark notification as read' });
+  }
+}; 
+
+export const updateUserAvatar = async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.params;
+    const requestingUser = req.user;
+    const { photoURL } = req.body; // Assuming photoURL is sent in the request body
+
+    if (requestingUser?.uid !== uid) {
+      return res.status(403).json({
+        error: 'ForbiddenError',
+        message: 'You can only update your own avatar'
+      });
+    }
+
+    if (!photoURL) {
+      return res.status(400).json({ error: 'BadRequestError', message: 'Photo URL is required' });
+    }
+
+    await updateUserAvatarService(uid, photoURL);
+    logger.info(`User ${uid} avatar updated.`);
+    res.json({ message: 'User avatar updated successfully', photoURL });
+  } catch (error) {
+    logger.error('Error updating user avatar:', error);
+    res.status(500).json({ error: 'InternalServerError', message: 'Failed to update user avatar' });
   }
 }; 

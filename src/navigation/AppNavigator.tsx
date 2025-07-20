@@ -2,10 +2,11 @@
 
 import React from 'react';
 import { NavigationContainer, RouteProp, NavigatorScreenParams } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createBottomTabNavigator, BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { createStackNavigator, StackScreenProps } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons'; // Assuming you use Expo/Ionicons
 import { ParamListBase } from '@react-navigation/routers'; // Import ParamListBase
+import { CompositeScreenProps } from '@react-navigation/native'; // Import CompositeScreenProps
 
 import {
   HomeScreen,
@@ -24,7 +25,7 @@ import {
   FeedbackScreen,
   UserProfileScreen,
   EditProfileScreen,
-} from '../screens';
+} from '../screens/LazyScreens';
 import { Colors, AppRoutes } from '../constants';
 import { useAuth } from '../context';
 
@@ -76,6 +77,9 @@ export type RootTabParamList = {
   [AppRoutes.Prototype]: PrototypeStackParamList;
   [AppRoutes.Profile]: ProfileStackParamList;
 };
+
+// Remove RootStackParamList and AppScreenProps for now, as they were causing issues.
+// We'll define specific types for navigation where needed.
 
 const AuthStack = createStackNavigator<AuthStackParamList>();
 const HomeStack = createStackNavigator<HomeStackParamList>();

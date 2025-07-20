@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "name": "Auto Git Push",
+  "description": "Automatically commits and pushes AI-generated files to git when the codebase has been stable for 1 minute",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*",
+      "backend/src/**/*",
+      "*.ts",
+      "*.tsx",
+      "*.js",
+      "*.jsx",
+      "*.json",
+      "*.md"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The codebase has been stable for 1 minute. Please commit and push any AI-generated files to git with an appropriate commit message describing the changes made."
+  }
+}

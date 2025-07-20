@@ -2,14 +2,14 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { auth } from '../services/firebase'; // Import Firebase auth instance
-import { authApi } from '../api/auth.api'; // Import auth API functions
+import { firebaseAuthApi, FirebaseLoginCredentials, FirebaseAuthUser } from '../api/auth.api'; // Import auth API functions
 import { User } from '../types'; // Assuming you have a User type defined from your types folder
 import { User as FirebaseUser } from 'firebase/auth'; // Import Firebase User type specifically
 
 interface AuthContextType {
   user: User | null;
   loading: boolean; // Add loading state for initial auth check
-  signIn: (credentials: any) => Promise<User | void>; // Adjusted return type to match authApi.login
+  signIn: (credentials: FirebaseLoginCredentials) => Promise<FirebaseAuthUser>;
   signOut: () => Promise<void>;
 }
 
@@ -24,7 +24,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
         const token = await firebaseUser.getIdToken();
-        setUser({ id: firebaseUser.uid, email: firebaseUser.email || '', token: token }); // Ensure email is not null
+        setUser({ 
+          id: firebaseUser.uid, 
+          email: firebaseUser.email || '', 
+          token: token, 
+          displayName: firebaseUser.displayName || undefined, // Populate displayName
+          photoURL: firebaseUser.photoURL || undefined, // Populate photoURL
+        });
       } else {
         setUser(null);
       }
@@ -35,9 +41,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  const signIn = async (credentials: any) => {
+  const signIn = async (credentials: FirebaseLoginCredentials) => {
     try {
-      const response = await authApi.login(credentials);
+      const response = await firebaseAuthApi.login(credentials);
       // setUser is already handled by onAuthStateChanged listener
       console.log('Signed in successfully');
       return response; // Return response if needed by component
@@ -49,7 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
-      await authApi.signOut();
+      await firebaseAuthApi.signOut();
       // setUser is already handled by onAuthStateChanged listener
       console.log('Signed out successfully');
     } catch (error) {

@@ -53,11 +53,11 @@ export interface SignInData {
   password: string;
 }
 
-export interface AuthError {
+export interface FirebaseAuthError {
   code: string;
   message: string;
   email?: string;
-  credential?: any;
+  credential?: Record<string, unknown>;
 }
 
 class FirebaseAuthService {
@@ -156,7 +156,7 @@ class FirebaseAuthService {
       await this.storeUser(user);
 
       return user;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Sign up error:', error);
       throw this.handleAuthError(error);
     }
@@ -180,7 +180,7 @@ class FirebaseAuthService {
       await this.storeUser(user);
 
       return user;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Sign in error:', error);
       throw this.handleAuthError(error);
     }
@@ -194,7 +194,7 @@ class FirebaseAuthService {
       await signOut(this.auth);
       this.currentUser = null;
       await this.clearStoredUser();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Sign out error:', error);
       throw this.handleAuthError(error);
     }
@@ -251,7 +251,7 @@ class FirebaseAuthService {
         };
         await this.storeUser(this.currentUser);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update profile error:', error);
       throw this.handleAuthError(error);
     }
@@ -273,7 +273,7 @@ class FirebaseAuthService {
         this.currentUser.email = newEmail;
         await this.storeUser(this.currentUser);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update email error:', error);
       throw this.handleAuthError(error);
     }
@@ -289,7 +289,7 @@ class FirebaseAuthService {
       }
 
       await updatePassword(this.auth.currentUser, newPassword);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update password error:', error);
       throw this.handleAuthError(error);
     }
@@ -301,7 +301,7 @@ class FirebaseAuthService {
   async sendPasswordResetEmail(email: string): Promise<void> {
     try {
       await sendPasswordResetEmail(this.auth, email);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Send password reset email error:', error);
       throw this.handleAuthError(error);
     }
@@ -313,7 +313,7 @@ class FirebaseAuthService {
   async confirmPasswordReset(code: string, newPassword: string): Promise<void> {
     try {
       await confirmPasswordReset(this.auth, code, newPassword);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Confirm password reset error:', error);
       throw this.handleAuthError(error);
     }
@@ -331,7 +331,7 @@ class FirebaseAuthService {
       await deleteUser(this.auth.currentUser);
       this.currentUser = null;
       await this.clearStoredUser();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Delete account error:', error);
       throw this.handleAuthError(error);
     }
@@ -347,7 +347,7 @@ class FirebaseAuthService {
       }
 
       return await this.auth.currentUser.getIdToken(forceRefresh);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Get ID token error:', error);
       throw this.handleAuthError(error);
     }
@@ -406,7 +406,7 @@ class FirebaseAuthService {
   /**
    * Handle Firebase auth errors
    */
-  private handleAuthError(error: any): AuthError {
+  private handleAuthError(error: unknown): FirebaseAuthError {
     let message = 'An authentication error occurred';
 
     switch (error.code) {

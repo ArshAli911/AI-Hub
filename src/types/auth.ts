@@ -4,7 +4,8 @@ export interface User {
   username?: string;
   token: string;
   name?: string;
-  profilePicture?: string;
+  displayName?: string; // Add displayName
+  photoURL?: string; // Rename profilePicture to photoURL
   bio?: string;
   posts?: number;
   followers?: number;

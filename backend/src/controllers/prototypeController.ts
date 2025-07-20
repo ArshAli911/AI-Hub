@@ -1,7 +1,19 @@
 import { Request, Response } from 'express';
-import { prototypeModel, Prototype, PrototypeFeedback, PrototypeComment } from '../models/Prototype';
-import { userModel, UserRole } from '../models/User';
+import { userModel, User, UserRole, UserPermission } from '../models/User';
+import { prototypeModel, Prototype, PrototypeFile } from '../models/Prototype'; // Import PrototypeFile
 import logger from '../services/loggerService';
+import multer from 'multer';
+import { uploadFileToFirebase } from '../services/fileUploadService';
+
+// Configure Multer for file uploads
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Middleware to handle prototype file uploads
+export const prototypeUploadMiddleware = upload.fields([
+  { name: 'screenshots', maxCount: 10 },
+  { name: 'videos', maxCount: 5 },
+  { name: 'files', maxCount: 20 },
+]);
 
 export const getPrototypes = (req: Request, res: Response) => {
   // Logic to fetch all prototypes from a service/database
@@ -92,13 +104,16 @@ export const createPrototype = async (req: Request, res: Response) => {
       estimatedTime,
       requirements,
       features,
-      screenshots,
-      videos,
-      files,
       demoUrl,
       sourceCodeUrl,
       documentationUrl
     } = req.body;
+
+    // Access files from req.files (after multer middleware)
+    const uploadedScreenshots = (req.files as { [fieldname: string]: Express.Multer.File[] })?.screenshots || [];
+    const uploadedVideos = (req.files as { [fieldname: string]: Express.Multer.File[] })?.videos || [];
+    const uploadedFiles = (req.files as { [fieldname: string]: Express.Multer.File[] })?.files || [];
+
     const requestingUser = req.user;
 
     if (!requestingUser) {
@@ -125,6 +140,35 @@ export const createPrototype = async (req: Request, res: Response) => {
       });
     }
 
+    // Helper to determine file type based on mimetype
+    const getFileType = (mimetype: string): PrototypeFile['type'] => {
+      if (mimetype.startsWith('image/')) return 'image';
+      if (mimetype.startsWith('video/')) return 'video';
+      if (mimetype.includes('document') || mimetype.includes('pdf')) return 'document';
+      if (mimetype.includes('code') || mimetype.includes('json') || mimetype.includes('xml')) return 'code';
+      return 'other';
+    };
+
+    // Upload files to Firebase Storage and map to PrototypeFile interface
+    const processFiles = async (files: Express.Multer.File[], folder: string): Promise<PrototypeFile[]> => {
+      return Promise.all(files.map(async (file) => {
+        const fileUrl = await uploadFileToFirebase(file.buffer, file.mimetype!, `prototypes/${folder}`);
+        return {
+          id: Math.random().toString(36).substring(2, 15), // Simple unique ID
+          name: file.originalname,
+          type: getFileType(file.mimetype!),
+          url: fileUrl,
+          size: file.size,
+          mimeType: file.mimetype!,
+          uploadedAt: new Date(),
+        };
+      }));
+    };
+
+    const screenshotFiles = await processFiles(uploadedScreenshots, 'screenshots');
+    const videoFiles = await processFiles(uploadedVideos, 'videos');
+    const otherFiles = await processFiles(uploadedFiles, 'files');
+
     const prototypeData = {
       creatorId: requestingUser.uid,
       creator: user,
@@ -137,9 +181,9 @@ export const createPrototype = async (req: Request, res: Response) => {
       estimatedTime: estimatedTime || 0,
       requirements: requirements || [],
       features: features || [],
-      screenshots: screenshots || [],
-      videos: videos || [],
-      files: files || [],
+      screenshots: screenshotFiles.map(f => f.url), // Store only URLs for screenshots/videos directly on Prototype
+      videos: videoFiles.map(f => f.url),
+      files: otherFiles, // Store full PrototypeFile objects for generic files
       demoUrl,
       sourceCodeUrl,
       documentationUrl,
@@ -164,7 +208,10 @@ export const createPrototype = async (req: Request, res: Response) => {
         difficulty: prototype.difficulty,
         status: prototype.status,
         visibility: prototype.visibility,
-        createdAt: prototype.createdAt
+        createdAt: prototype.createdAt,
+        screenshots: prototype.screenshots,
+        videos: prototype.videos,
+        files: prototype.files,
       }
     });
   } catch (error) {

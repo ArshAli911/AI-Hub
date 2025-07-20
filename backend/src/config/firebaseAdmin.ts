@@ -1,5 +1,6 @@
 import * as admin from 'firebase-admin';
 import path from 'path';
+import { config } from './environment'; // Import the environment configuration
 
 // Load your service account key file
 // Use process.cwd() for a more reliable path relative to the project root
@@ -11,7 +12,7 @@ const serviceAccount = require(serviceAccountPath);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   // databaseURL: "https://<DATABASE_NAME>.firebaseio.com", // Uncomment if using Realtime Database
-  // storageBucket: "<BUCKET_NAME>.appspot.com", // Uncomment if using Cloud Storage
+  storageBucket: config.FIREBASE_STORAGE_BUCKET, // Use the storage bucket from environment config
 });
 
 console.log('Firebase Admin SDK initialized successfully!');
@@ -20,4 +21,4 @@ console.log('Firebase Admin SDK initialized successfully!');
 export const authAdmin = admin.auth();
 export const firestoreAdmin = admin.firestore();
 export const messagingAdmin = admin.messaging();
-// export const storageAdmin = admin.storage(); // Uncomment if you need server-side storage access 
+export const storageAdmin = admin.storage(); // Uncommented for server-side storage access 

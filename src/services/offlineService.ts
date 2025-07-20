@@ -1,674 +1,388 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import apiClient from '../api/client';
-import firebaseAuthService from './firebaseService';
+import { apiClient } from '../api/client';
+import { logger } from '../utils/logger';
 
 export interface OfflineAction {
   id: string;
-  type: string;
+  type: 'CREATE' | 'UPDATE' | 'DELETE';
   endpoint: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   data?: any;
-  params?: any;
-  headers?: Record<string, string>;
   timestamp: number;
   retryCount: number;
   maxRetries: number;
-  priority: 'low' | 'normal' | 'high' | 'critical';
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  error?: string;
-  result?: any;
 }
 
-export interface SyncConfig {
-  enabled: boolean;
-  autoSync: boolean;
-  syncInterval: number;
-  maxRetries: number;
-  retryDelay: number;
-  conflictResolution: 'server-wins' | 'client-wins' | 'manual';
-  syncOnConnect: boolean;
-  syncOnAppStart: boolean;
-}
-
-export interface DataCache {
+export interface OfflineData {
   key: string;
   data: any;
   timestamp: number;
-  ttl: number;
-  version: number;
-  etag?: string;
+  expiresAt?: number;
 }
 
-export interface ConflictData {
-  id: string;
-  key: string;
-  serverData: any;
-  localData: any;
-  timestamp: number;
-  resolved: boolean;
-  resolution?: 'server' | 'client' | 'merge';
+export interface SyncStatus {
+  isOnline: boolean;
+  isSyncing: boolean;
+  pendingActions: number;
+  lastSyncTime?: number;
+  syncErrors: string[];
 }
 
 class OfflineService {
-  private actionQueue: OfflineAction[] = [];
-  private dataCache: Map<string, DataCache> = new Map();
-  private conflicts: Map<string, ConflictData> = new Map();
-  private isOnline = true;
-  private isSyncing = false;
-  private syncTimer: NodeJS.Timeout | null = null;
-  private config: SyncConfig = {
-    enabled: true,
-    autoSync: true,
-    syncInterval: 30000, // 30 seconds
-    maxRetries: 3,
-    retryDelay: 5000,
-    conflictResolution: 'server-wins',
-    syncOnConnect: true,
-    syncOnAppStart: true
+  private isOnline: boolean = true;
+  private syncInProgress: boolean = false;
+  private pendingActions: OfflineAction[] = [];
+  private cachedData: Map<string, OfflineData> = new Map();
+  private syncListeners: Array<(status: SyncStatus) => void> = [];
+  private readonly STORAGE_KEYS = {
+    PENDING_ACTIONS: '@offline_pending_actions',
+    CACHED_DATA: '@offline_cached_data',
+    LAST_SYNC: '@offline_last_sync',
   };
 
   constructor() {
     this.initialize();
   }
 
-  /**
-   * Initialize offline service
-   */
   private async initialize(): Promise<void> {
     try {
-      // Load configuration
-      await this.loadConfig();
+      // Load pending actions from storage
+      await this.loadPendingActions();
       
-      // Load cached data
-      await this.loadCache();
+      // Load cached data from storage
+      await this.loadCachedData();
       
-      // Load action queue
-      await this.loadActionQueue();
-      
-      // Load conflicts
-      await this.loadConflicts();
-      
-      // Set up network monitoring
-      this.setupNetworkMonitoring();
-      
-      // Set up auto-sync
-      if (this.config.autoSync) {
-        this.startAutoSync();
-      }
+      // Set up network listener
+      this.setupNetworkListener();
       
       // Initial sync if online
-      if (this.isOnline && this.config.syncOnAppStart) {
-        this.sync();
+      const netInfo = await NetInfo.fetch();
+      if (netInfo.isConnected) {
+        this.handleNetworkChange(true);
       }
+      
+      logger.info('OfflineService initialized successfully');
     } catch (error) {
-      console.error('Error initializing offline service:', error);
+      logger.error('Failed to initialize OfflineService', error);
     }
   }
 
-  /**
-   * Set up network monitoring
-   */
-  private setupNetworkMonitoring(): void {
+  private setupNetworkListener(): void {
     NetInfo.addEventListener(state => {
       const wasOnline = this.isOnline;
       this.isOnline = state.isConnected ?? false;
       
-      if (!wasOnline && this.isOnline && this.config.syncOnConnect) {
-        this.sync();
+      if (!wasOnline && this.isOnline) {
+        // Just came online
+        this.handleNetworkChange(true);
+      } else if (wasOnline && !this.isOnline) {
+        // Just went offline
+        this.handleNetworkChange(false);
       }
     });
   }
 
-  /**
-   * Start auto-sync timer
-   */
-  private startAutoSync(): void {
-    if (this.syncTimer) {
-      clearInterval(this.syncTimer);
+  private async handleNetworkChange(isOnline: boolean): Promise<void> {
+    logger.info(`Network status changed: ${isOnline ? 'online' : 'offline'}`);
+    
+    if (isOnline && this.pendingActions.length > 0) {
+      // Sync pending actions when coming online
+      await this.syncPendingActions();
     }
     
-    this.syncTimer = setInterval(() => {
-      if (this.isOnline && !this.isSyncing) {
-        this.sync();
-      }
-    }, this.config.syncInterval);
+    this.notifyListeners();
   }
 
-  /**
-   * Stop auto-sync timer
-   */
-  private stopAutoSync(): void {
-    if (this.syncTimer) {
-      clearInterval(this.syncTimer);
-      this.syncTimer = null;
-    }
-  }
-
-  /**
-   * Add action to offline queue
-   */
-  async queueAction(action: Omit<OfflineAction, 'id' | 'timestamp' | 'retryCount' | 'status'>): Promise<string> {
+  private async loadPendingActions(): Promise<void> {
     try {
-      const offlineAction: OfflineAction = {
-        ...action,
-        id: this.generateActionId(),
-        timestamp: Date.now(),
-        retryCount: 0,
-        status: 'pending'
-      };
-
-      this.actionQueue.push(offlineAction);
-      await this.saveActionQueue();
-
-      // Process immediately if online
-      if (this.isOnline && !this.isSyncing) {
-        this.processQueue();
+      const stored = await AsyncStorage.getItem(this.STORAGE_KEYS.PENDING_ACTIONS);
+      if (stored) {
+        this.pendingActions = JSON.parse(stored);
+        logger.debug(`Loaded ${this.pendingActions.length} pending actions`);
       }
-
-      return offlineAction.id;
     } catch (error) {
-      console.error('Error queuing action:', error);
-      throw error;
+      logger.error('Failed to load pending actions', error);
     }
   }
 
-  /**
-   * Process the action queue
-   */
-  private async processQueue(): Promise<void> {
-    if (this.isSyncing || !this.isOnline) {
-      return;
-    }
-
-    this.isSyncing = true;
-
+  private async savePendingActions(): Promise<void> {
     try {
-      const actions = [...this.actionQueue].sort((a, b) => {
-        // Sort by priority, then by timestamp
-        const priorityOrder = { critical: 0, high: 1, normal: 2, low: 3 };
-        const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-        return priorityDiff !== 0 ? priorityDiff : a.timestamp - b.timestamp;
-      });
-
-      for (const action of actions) {
-        if (action.status === 'pending' || action.status === 'failed') {
-          await this.processAction(action);
-        }
-      }
-
-      // Clean up completed actions
-      this.actionQueue = this.actionQueue.filter(action => action.status !== 'completed');
-      await this.saveActionQueue();
-
+      await AsyncStorage.setItem(
+        this.STORAGE_KEYS.PENDING_ACTIONS,
+        JSON.stringify(this.pendingActions)
+      );
     } catch (error) {
-      console.error('Error processing action queue:', error);
-    } finally {
-      this.isSyncing = false;
+      logger.error('Failed to save pending actions', error);
     }
   }
 
-  /**
-   * Process a single action
-   */
-  private async processAction(action: OfflineAction): Promise<void> {
+  private async loadCachedData(): Promise<void> {
     try {
-      action.status = 'processing';
-      await this.saveActionQueue();
-
-      const response = await this.executeAction(action);
-      
-      action.status = 'completed';
-      action.result = response;
-      action.retryCount = 0;
-
-    } catch (error) {
-      console.error('Error processing action:', action.id, error);
-      
-      action.status = 'failed';
-      action.error = error instanceof Error ? error.message : 'Unknown error';
-      action.retryCount++;
-
-      if (action.retryCount >= action.maxRetries) {
-        console.error('Action failed after max retries:', action.id);
+      const stored = await AsyncStorage.getItem(this.STORAGE_KEYS.CACHED_DATA);
+      if (stored) {
+        const data = JSON.parse(stored);
+        this.cachedData = new Map(Object.entries(data));
+        logger.debug(`Loaded ${this.cachedData.size} cached items`);
       }
+    } catch (error) {
+      logger.error('Failed to load cached data', error);
     }
+  }
 
-    await this.saveActionQueue();
+  private async saveCachedData(): Promise<void> {
+    try {
+      const data = Object.fromEntries(this.cachedData);
+      await AsyncStorage.setItem(
+        this.STORAGE_KEYS.CACHED_DATA,
+        JSON.stringify(data)
+      );
+    } catch (error) {
+      logger.error('Failed to save cached data', error);
+    }
   }
 
   /**
-   * Execute an action
+   * Queue an action for offline execution
    */
-  private async executeAction(action: OfflineAction): Promise<any> {
-    const { endpoint, method, data, params, headers } = action;
+  async queueAction(
+    type: OfflineAction['type'],
+    endpoint: string,
+    data?: any,
+    maxRetries: number = 3
+  ): Promise<string> {
+    const action: OfflineAction = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      endpoint,
+      data,
+      timestamp: Date.now(),
+      retryCount: 0,
+      maxRetries,
+    };
 
-    switch (method) {
-      case 'GET':
-        return await apiClient.get(endpoint, { params, headers });
-      case 'POST':
-        return await apiClient.post(endpoint, data, { headers });
-      case 'PUT':
-        return await apiClient.put(endpoint, data, { headers });
-      case 'PATCH':
-        return await apiClient.patch(endpoint, data, { headers });
-      case 'DELETE':
-        return await apiClient.delete(endpoint, { headers });
-      default:
-        throw new Error(`Unsupported HTTP method: ${method}`);
+    this.pendingActions.push(action);
+    await this.savePendingActions();
+    
+    logger.info(`Queued offline action: ${type} ${endpoint}`);
+    this.notifyListeners();
+
+    // Try to execute immediately if online
+    if (this.isOnline) {
+      await this.syncPendingActions();
     }
+
+    return action.id;
   }
 
   /**
    * Cache data for offline access
    */
-  async cacheData(key: string, data: any, ttl: number = 3600000): Promise<void> {
-    try {
-      const cacheEntry: DataCache = {
-        key,
-        data,
-        timestamp: Date.now(),
-        ttl,
-        version: 1
-      };
+  async cacheData(key: string, data: any, ttl?: number): Promise<void> {
+    const cacheItem: OfflineData = {
+      key,
+      data,
+      timestamp: Date.now(),
+      expiresAt: ttl ? Date.now() + ttl : undefined,
+    };
 
-      this.dataCache.set(key, cacheEntry);
-      await this.saveCache();
-    } catch (error) {
-      console.error('Error caching data:', error);
-      throw error;
-    }
+    this.cachedData.set(key, cacheItem);
+    await this.saveCachedData();
+    
+    logger.debug(`Cached data for key: ${key}`);
   }
 
   /**
    * Get cached data
    */
-  async getCachedData(key: string): Promise<any | null> {
-    try {
-      const cacheEntry = this.dataCache.get(key);
-      
-      if (!cacheEntry) {
-        return null;
-      }
-
-      // Check if cache is expired
-      if (Date.now() - cacheEntry.timestamp > cacheEntry.ttl) {
-        this.dataCache.delete(key);
-        await this.saveCache();
-        return null;
-      }
-
-      return cacheEntry.data;
-    } catch (error) {
-      console.error('Error getting cached data:', error);
+  getCachedData<T>(key: string): T | null {
+    const cached = this.cachedData.get(key);
+    
+    if (!cached) {
       return null;
     }
+
+    // Check if expired
+    if (cached.expiresAt && Date.now() > cached.expiresAt) {
+      this.cachedData.delete(key);
+      this.saveCachedData();
+      return null;
+    }
+
+    return cached.data as T;
   }
 
   /**
    * Clear cached data
    */
   async clearCache(key?: string): Promise<void> {
-    try {
-      if (key) {
-        this.dataCache.delete(key);
-      } else {
-        this.dataCache.clear();
-      }
-      await this.saveCache();
-    } catch (error) {
-      console.error('Error clearing cache:', error);
-      throw error;
+    if (key) {
+      this.cachedData.delete(key);
+    } else {
+      this.cachedData.clear();
     }
+    
+    await this.saveCachedData();
+    logger.info(key ? `Cleared cache for: ${key}` : 'Cleared all cache');
   }
 
   /**
-   * Sync data with server
+   * Sync pending actions with server
    */
-  async sync(): Promise<void> {
-    if (this.isSyncing || !this.isOnline) {
+  private async syncPendingActions(): Promise<void> {
+    if (this.syncInProgress || !this.isOnline || this.pendingActions.length === 0) {
       return;
     }
 
-    this.isSyncing = true;
+    this.syncInProgress = true;
+    this.notifyListeners();
 
-    try {
-      // Process action queue
-      await this.processQueue();
-      
-      // Sync cached data
-      await this.syncCache();
-      
-      // Resolve conflicts
-      await this.resolveConflicts();
-      
-    } catch (error) {
-      console.error('Error during sync:', error);
-    } finally {
-      this.isSyncing = false;
-    }
-  }
+    logger.info(`Starting sync of ${this.pendingActions.length} pending actions`);
 
-  /**
-   * Sync cache with server
-   */
-  private async syncCache(): Promise<void> {
-    try {
-      for (const [key, cacheEntry] of this.dataCache) {
-        // Check if data needs to be synced
-        if (this.shouldSyncData(key, cacheEntry)) {
-          await this.syncData(key, cacheEntry);
+    const actionsToSync = [...this.pendingActions];
+    const syncErrors: string[] = [];
+
+    for (const action of actionsToSync) {
+      try {
+        await this.executeAction(action);
+        
+        // Remove successful action
+        this.pendingActions = this.pendingActions.filter(a => a.id !== action.id);
+        logger.debug(`Successfully synced action: ${action.type} ${action.endpoint}`);
+        
+      } catch (error) {
+        action.retryCount++;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        
+        if (action.retryCount >= action.maxRetries) {
+          // Remove failed action after max retries
+          this.pendingActions = this.pendingActions.filter(a => a.id !== action.id);
+          syncErrors.push(`Failed to sync ${action.type} ${action.endpoint}: ${errorMessage}`);
+          logger.error(`Action failed after ${action.maxRetries} retries`, error);
+        } else {
+          logger.warn(`Action retry ${action.retryCount}/${action.maxRetries}`, error);
         }
       }
-    } catch (error) {
-      console.error('Error syncing cache:', error);
+    }
+
+    await this.savePendingActions();
+    await AsyncStorage.setItem(this.STORAGE_KEYS.LAST_SYNC, Date.now().toString());
+
+    this.syncInProgress = false;
+    this.notifyListeners();
+
+    if (syncErrors.length > 0) {
+      logger.error('Sync completed with errors', { errors: syncErrors });
+    } else {
+      logger.info('Sync completed successfully');
+    }
+  }
+
+  private async executeAction(action: OfflineAction): Promise<void> {
+    switch (action.type) {
+      case 'CREATE':
+        await apiClient.post(action.endpoint, action.data);
+        break;
+      case 'UPDATE':
+        await apiClient.put(action.endpoint, action.data);
+        break;
+      case 'DELETE':
+        await apiClient.delete(action.endpoint);
+        break;
+      default:
+        throw new Error(`Unknown action type: ${action.type}`);
     }
   }
 
   /**
-   * Check if data should be synced
+   * Get current sync status
    */
-  private shouldSyncData(key: string, cacheEntry: DataCache): boolean {
-    // Add your sync logic here
-    // For example, sync if data is older than 5 minutes
-    return Date.now() - cacheEntry.timestamp > 300000;
-  }
-
-  /**
-   * Sync individual data item
-   */
-  private async syncData(key: string, cacheEntry: DataCache): Promise<void> {
-    try {
-      // Get fresh data from server
-      const response = await apiClient.get(`/sync/${key}`, {
-        headers: { 'If-None-Match': cacheEntry.etag }
-      });
-
-      // Check for conflicts
-      if (response.data.version !== cacheEntry.version) {
-        await this.handleConflict(key, cacheEntry.data, response.data);
-      } else {
-        // Update cache with fresh data
-        cacheEntry.data = response.data;
-        cacheEntry.timestamp = Date.now();
-        cacheEntry.version = response.data.version;
-        cacheEntry.etag = response.headers.etag;
-      }
-
-    } catch (error) {
-      if (error.response?.status === 304) {
-        // Data hasn't changed
-        return;
-      }
-      console.error('Error syncing data:', key, error);
-    }
-  }
-
-  /**
-   * Handle data conflicts
-   */
-  private async handleConflict(key: string, localData: any, serverData: any): Promise<void> {
-    const conflict: ConflictData = {
-      id: this.generateConflictId(),
-      key,
-      serverData,
-      localData,
-      timestamp: Date.now(),
-      resolved: false
-    };
-
-    this.conflicts.set(conflict.id, conflict);
-    await this.saveConflicts();
-
-    // Auto-resolve based on config
-    if (this.config.conflictResolution !== 'manual') {
-      await this.resolveConflict(conflict.id, this.config.conflictResolution);
-    }
-  }
-
-  /**
-   * Resolve a conflict
-   */
-  async resolveConflict(conflictId: string, resolution: 'server' | 'client' | 'merge'): Promise<void> {
-    try {
-      const conflict = this.conflicts.get(conflictId);
-      if (!conflict) {
-        return;
-      }
-
-      let resolvedData: any;
-
-      switch (resolution) {
-        case 'server':
-          resolvedData = conflict.serverData;
-          break;
-        case 'client':
-          resolvedData = conflict.localData;
-          break;
-        case 'merge':
-          resolvedData = this.mergeData(conflict.localData, conflict.serverData);
-          break;
-      }
-
-      // Update cache with resolved data
-      const cacheEntry = this.dataCache.get(conflict.key);
-      if (cacheEntry) {
-        cacheEntry.data = resolvedData;
-        cacheEntry.timestamp = Date.now();
-        cacheEntry.version++;
-      }
-
-      // Mark conflict as resolved
-      conflict.resolved = true;
-      conflict.resolution = resolution;
-      this.conflicts.delete(conflictId);
-
-      await this.saveCache();
-      await this.saveConflicts();
-
-    } catch (error) {
-      console.error('Error resolving conflict:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Merge local and server data
-   */
-  private mergeData(localData: any, serverData: any): any {
-    // Implement your merge logic here
-    // This is a simple example - you might want more sophisticated merging
-    return { ...serverData, ...localData };
-  }
-
-  /**
-   * Resolve all conflicts
-   */
-  private async resolveConflicts(): Promise<void> {
-    try {
-      for (const [conflictId, conflict] of this.conflicts) {
-        if (!conflict.resolved) {
-          await this.resolveConflict(conflictId, this.config.conflictResolution);
-        }
-      }
-    } catch (error) {
-      console.error('Error resolving conflicts:', error);
-    }
-  }
-
-  /**
-   * Get sync status
-   */
-  getSyncStatus(): {
-    isOnline: boolean;
-    isSyncing: boolean;
-    queueLength: number;
-    conflictsCount: number;
-    lastSync?: Date;
-  } {
+  getSyncStatus(): SyncStatus {
     return {
       isOnline: this.isOnline,
-      isSyncing: this.isSyncing,
-      queueLength: this.actionQueue.length,
-      conflictsCount: this.conflicts.size,
-      lastSync: this.lastSync
+      isSyncing: this.syncInProgress,
+      pendingActions: this.pendingActions.length,
+      lastSyncTime: this.getLastSyncTime(),
+      syncErrors: [],
     };
   }
 
-  /**
-   * Update configuration
-   */
-  async updateConfig(config: Partial<SyncConfig>): Promise<void> {
+  private async getLastSyncTime(): Promise<number | undefined> {
     try {
-      this.config = { ...this.config, ...config };
-      await this.saveConfig();
+      const stored = await AsyncStorage.getItem(this.STORAGE_KEYS.LAST_SYNC);
+      return stored ? parseInt(stored, 10) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
-      if (this.config.autoSync) {
-        this.startAutoSync();
-      } else {
-        this.stopAutoSync();
+  /**
+   * Subscribe to sync status changes
+   */
+  onSyncStatusChange(listener: (status: SyncStatus) => void): () => void {
+    this.syncListeners.push(listener);
+    
+    // Return unsubscribe function
+    return () => {
+      const index = this.syncListeners.indexOf(listener);
+      if (index > -1) {
+        this.syncListeners.splice(index, 1);
       }
-    } catch (error) {
-      console.error('Error updating config:', error);
-      throw error;
-    }
+    };
   }
 
-  /**
-   * Get configuration
-   */
-  getConfig(): SyncConfig {
-    return { ...this.config };
-  }
-
-  /**
-   * Generate unique action ID
-   */
-  private generateActionId(): string {
-    return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Generate unique conflict ID
-   */
-  private generateConflictId(): string {
-    return `conflict_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  /**
-   * Load configuration from storage
-   */
-  private async loadConfig(): Promise<void> {
-    try {
-      const configData = await AsyncStorage.getItem('offline_config');
-      if (configData) {
-        this.config = { ...this.config, ...JSON.parse(configData) };
+  private notifyListeners(): void {
+    const status = this.getSyncStatus();
+    this.syncListeners.forEach(listener => {
+      try {
+        listener(status);
+      } catch (error) {
+        logger.error('Error in sync status listener', error);
       }
-    } catch (error) {
-      console.error('Error loading config:', error);
+    });
+  }
+
+  /**
+   * Force sync now
+   */
+  async forcSync(): Promise<void> {
+    if (this.isOnline) {
+      await this.syncPendingActions();
+    } else {
+      throw new Error('Cannot sync while offline');
     }
   }
 
   /**
-   * Save configuration to storage
+   * Check if device is online
    */
-  private async saveConfig(): Promise<void> {
-    try {
-      await AsyncStorage.setItem('offline_config', JSON.stringify(this.config));
-    } catch (error) {
-      console.error('Error saving config:', error);
-    }
+  isDeviceOnline(): boolean {
+    return this.isOnline;
   }
 
   /**
-   * Load cache from storage
+   * Get pending actions count
    */
-  private async loadCache(): Promise<void> {
-    try {
-      const cacheData = await AsyncStorage.getItem('offline_cache');
-      if (cacheData) {
-        const cache = JSON.parse(cacheData);
-        this.dataCache = new Map(Object.entries(cache));
-      }
-    } catch (error) {
-      console.error('Error loading cache:', error);
-    }
+  getPendingActionsCount(): number {
+    return this.pendingActions.length;
   }
 
   /**
-   * Save cache to storage
+   * Clear all offline data
    */
-  private async saveCache(): Promise<void> {
-    try {
-      const cache = Object.fromEntries(this.dataCache);
-      await AsyncStorage.setItem('offline_cache', JSON.stringify(cache));
-    } catch (error) {
-      console.error('Error saving cache:', error);
-    }
+  async clearAllOfflineData(): Promise<void> {
+    this.pendingActions = [];
+    this.cachedData.clear();
+    
+    await Promise.all([
+      AsyncStorage.removeItem(this.STORAGE_KEYS.PENDING_ACTIONS),
+      AsyncStorage.removeItem(this.STORAGE_KEYS.CACHED_DATA),
+      AsyncStorage.removeItem(this.STORAGE_KEYS.LAST_SYNC),
+    ]);
+    
+    logger.info('Cleared all offline data');
+    this.notifyListeners();
   }
-
-  /**
-   * Load action queue from storage
-   */
-  private async loadActionQueue(): Promise<void> {
-    try {
-      const queueData = await AsyncStorage.getItem('offline_queue');
-      if (queueData) {
-        this.actionQueue = JSON.parse(queueData);
-      }
-    } catch (error) {
-      console.error('Error loading action queue:', error);
-    }
-  }
-
-  /**
-   * Save action queue to storage
-   */
-  private async saveActionQueue(): Promise<void> {
-    try {
-      await AsyncStorage.setItem('offline_queue', JSON.stringify(this.actionQueue));
-    } catch (error) {
-      console.error('Error saving action queue:', error);
-    }
-  }
-
-  /**
-   * Load conflicts from storage
-   */
-  private async loadConflicts(): Promise<void> {
-    try {
-      const conflictsData = await AsyncStorage.getItem('offline_conflicts');
-      if (conflictsData) {
-        const conflicts = JSON.parse(conflictsData);
-        this.conflicts = new Map(Object.entries(conflicts));
-      }
-    } catch (error) {
-      console.error('Error loading conflicts:', error);
-    }
-  }
-
-  /**
-   * Save conflicts to storage
-   */
-  private async saveConflicts(): Promise<void> {
-    try {
-      const conflicts = Object.fromEntries(this.conflicts);
-      await AsyncStorage.setItem('offline_conflicts', JSON.stringify(conflicts));
-    } catch (error) {
-      console.error('Error saving conflicts:', error);
-    }
-  }
-
-  /**
-   * Cleanup service
-   */
-  cleanup(): void {
-    this.stopAutoSync();
-    this.isSyncing = false;
-  }
-
-  private lastSync?: Date;
 }
 
 export const offlineService = new OfflineService();
-export default offlineService; 
+export default offlineService;

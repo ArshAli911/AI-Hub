@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "name": "Auto Test Runner",
+  "description": "Automatically runs tests when the codebase has been updated and no further changes have been detected for more than 1 minute, also fix those issues that came along while testing",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "src/**/*.js",
+      "src/**/*.jsx",
+      "backend/src/**/*.ts",
+      "backend/src/**/*.js",
+      "package.json",
+      "backend/package.json",
+      "jest.config.js",
+      "backend/jest.config.js"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The codebase has been updated and stabilized. Please run the test suite for both the frontend and backend components. If any tests fail, analyze the failures and automatically fix the issues in the code. Run tests using appropriate commands like 'npm test' for frontend and 'npm test' in the backend directory. After fixing any issues, re-run the tests to ensure they pass."
+  }
+}
