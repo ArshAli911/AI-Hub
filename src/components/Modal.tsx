@@ -297,7 +297,6 @@ const Modal: React.FC<ModalProps> = ({
               style,
             ]}
             {...commonAccessibilityProps.text}
-            accessibilityRole="dialog"
             accessibilityLabel={title || 'Modal dialog'}
             accessibilityModal={true}
           >

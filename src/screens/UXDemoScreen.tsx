@@ -201,15 +201,16 @@ const UXDemoScreen: React.FC = () => {
               <Text style={styles.sectionTitle}>Enhanced Buttons</Text>
               
               <View style={styles.buttonGrid}>
-                <Button title="Primary" variant="primary" size="small" />
-                <Button title="Secondary" variant="secondary" size="small" />
-                <Button title="Outline" variant="outline" size="small" />
-                <Button title="Danger" variant="danger" size="small" />
+                <Button title="Primary" variant="primary" size="small" onPress={() => {}} />
+                <Button title="Secondary" variant="secondary" size="small" onPress={() => {}} />
+                <Button title="Outline" variant="outline" size="small" onPress={() => {}} />
+                <Button title="Danger" variant="danger" size="small" onPress={() => {}} />
               </View>
               
               <Button
                 title="Disabled Button"
                 disabled
+                onPress={() => {}}
                 style={styles.fullWidthButton}
               />
             </View>
@@ -274,7 +275,7 @@ const UXDemoScreen: React.FC = () => {
                   {({ value, error, onChange, onBlur }) => (
                     <TextInput
                       label="Full Name"
-                      value={value}
+                      value={value as string || ''}
                       onChangeText={onChange}
                       onBlur={onBlur}
                       error={error}
@@ -288,7 +289,7 @@ const UXDemoScreen: React.FC = () => {
                   {({ value, error, onChange, onBlur }) => (
                     <TextInput
                       label="Email Address"
-                      value={value}
+                      value={value as string || ''}
                       onChangeText={onChange}
                       onBlur={onBlur}
                       error={error}
@@ -304,7 +305,7 @@ const UXDemoScreen: React.FC = () => {
                   {({ value, error, onChange, onBlur }) => (
                     <TextInput
                       label="Password"
-                      value={value}
+                      value={value as string || ''}
                       onChangeText={onChange}
                       onBlur={onBlur}
                       error={error}

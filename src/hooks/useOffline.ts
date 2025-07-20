@@ -67,9 +67,11 @@ export interface OfflineAction {
 
 export interface UseOfflineReturn {
   isOnline: boolean;
+  isOffline: boolean;
   isSyncing: boolean;
   pendingActions: number;
   lastSyncTime: number | null;
+  connectionType?: string;
   queueAction: (method: string, url: string, data?: any) => Promise<string>;
   forceSync: () => Promise<void>;
   getCachedData: <T>(key: string) => T | null;
@@ -86,6 +88,7 @@ export const useOffline = (): UseOfflineReturn => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingActions, setPendingActions] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const [connectionType, setConnectionType] = useState<string | undefined>(undefined);
 
   // Monitor network state
   useEffect(() => {
@@ -275,9 +278,11 @@ export const useOffline = (): UseOfflineReturn => {
 
   return {
     isOnline,
+    isOffline: !isOnline,
     isSyncing,
     pendingActions,
     lastSyncTime,
+    connectionType,
     queueAction,
     forceSync,
     getCachedData,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 // Type definitions for cleanup functions
 type CleanupFunction = () => void;
@@ -214,7 +214,7 @@ export const useAsyncOperation = () => {
  * Hook for debouncing values to prevent excessive re-renders
  */
 export const useDebounce = <T>(value: T, delay: number): T => {
-  const [debouncedValue, setDebouncedValue] = React.useState<T>(value);
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
   const { setTimeout, clearAllTimers } = useTimers();
 
   useEffect(() => {
@@ -279,4 +279,110 @@ export const useLifecycle = (
       onUnmount?.();
     };
   }, [onMount, onUnmount]);
+};
+
+// Extend global types for memory API
+declare global {
+  interface Performance {
+    memory?: {
+      usedJSHeapSize: number;
+      totalJSHeapSize: number;
+      jsHeapSizeLimit: number;
+    };
+  }
+  
+  var gc: (() => void) | undefined;
+}
+
+// Type definitions for memory management
+interface MemoryUsage {
+  used: number;
+  total: number;
+  percentage: number;
+}
+
+interface UseMemoryManagementOptions {
+  onMemoryPressure?: () => void;
+  monitoringInterval?: number;
+  threshold?: number;
+}
+
+interface UseMemoryManagementReturn {
+  memoryUsage: MemoryUsage;
+  isMemoryPressure: boolean;
+  checkMemoryUsage: () => void;
+  forceGarbageCollection: () => void;
+}
+
+/**
+ * Hook for monitoring memory usage and managing memory pressure
+ */
+export const useMemoryManagement = (options?: UseMemoryManagementOptions): UseMemoryManagementReturn => {
+  const [memoryUsage, setMemoryUsage] = useState<MemoryUsage>({
+    used: 0,
+    total: 0,
+    percentage: 0,
+  });
+  
+  const [isMemoryPressure, setIsMemoryPressure] = useState(false);
+  const { setInterval, clearAllTimers } = useTimers();
+  
+  const threshold = options?.threshold ?? 80;
+  const onMemoryPressure = options?.onMemoryPressure;
+  const monitoringInterval = options?.monitoringInterval;
+
+  const checkMemoryUsage = useCallback(() => {
+    if (global.performance?.memory) {
+      const used = global.performance.memory.usedJSHeapSize;
+      const total = global.performance.memory.totalJSHeapSize;
+      
+      // Handle edge cases
+      if (total <= 0) {
+        setMemoryUsage({ used: 0, total: 0, percentage: 0 });
+        setIsMemoryPressure(false);
+        return;
+      }
+      
+      // Ensure non-negative values
+      const safeUsed = Math.max(0, used);
+      const safeTotal = Math.max(0, total);
+      const percentage = Math.round((safeUsed / safeTotal) * 100);
+      
+      setMemoryUsage({
+        used: safeUsed,
+        total: safeTotal,
+        percentage,
+      });
+      
+      const pressureDetected = percentage > threshold;
+      setIsMemoryPressure(pressureDetected);
+      
+      if (pressureDetected && onMemoryPressure) {
+        onMemoryPressure();
+      }
+    }
+  }, [threshold, onMemoryPressure]);
+
+  const forceGarbageCollection = useCallback(() => {
+    if (global.gc) {
+      global.gc();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (monitoringInterval) {
+      setInterval(checkMemoryUsage, monitoringInterval);
+    }
+
+    return () => {
+      clearAllTimers();
+    };
+  }, [checkMemoryUsage, monitoringInterval, setInterval, clearAllTimers]);
+
+  return {
+    memoryUsage,
+    isMemoryPressure,
+    checkMemoryUsage,
+    forceGarbageCollection,
+  };
 };

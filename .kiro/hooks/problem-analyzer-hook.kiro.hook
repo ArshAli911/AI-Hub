@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Problem Analyzer & Fixer",
+  "description": "Monitors the codebase for stability and automatically analyzes problems in the terminal's problem tab, then fixes those issues when the code has been stable for more than 1 minute",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "backend/src/**/*.ts",
+      "*.json",
+      "*.js",
+      "*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The codebase has been stable for over 1 minute. Please analyze the problems shown in the terminal's problem tab and fix any issues you find. Focus on TypeScript errors, linting issues, and compilation problems. Provide specific fixes for each problem identified."
+  }
+}

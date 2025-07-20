@@ -4,7 +4,7 @@
   "description": "Automatically commits and pushes AI-generated files to git when the codebase has been stable for 1 minute",
   "version": "1",
   "when": {
-    "type": "fileEdited",
+    "type": "userTriggered",
     "patterns": [
       "src/**/*",
       "backend/src/**/*",

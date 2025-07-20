@@ -35,7 +35,7 @@ module.exports = {
     'json-summary',
   ],
   coverageDirectory: '<rootDir>/coverage',
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@components/(.*)$': '<rootDir>/src/components/$1',
     '^@services/(.*)$': '<rootDir>/src/services/$1',
@@ -47,32 +47,13 @@ module.exports = {
     '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|expo|@expo|@react-navigation|react-navigation|@testing-library/react-native)/)',
+    'node_modules/(?!(react-native|@react-native|expo|@expo|@react-navigation|react-navigation|@testing-library/react-native|@testing-library/jest-native)/)',
   ],
   testEnvironment: 'jsdom',
   globals: {
     __DEV__: true,
   },
-  reporters: [
-    'default',
-    [
-      'jest-junit',
-      {
-        outputDirectory: 'test-results',
-        outputName: 'junit.xml',
-        suiteName: 'AI Hub Tests',
-      },
-    ],
-    [
-      'jest-html-reporters',
-      {
-        publicPath: './test-results',
-        filename: 'report.html',
-        expand: true,
-      },
-    ],
-  ],
-  testTimeout: 10000,
+  reporters: ['default'],
   maxWorkers: '50%',
   cache: true,
   cacheDirectory: '<rootDir>/.jest-cache',
@@ -99,7 +80,6 @@ module.exports = {
       testMatch: [
         '<rootDir>/src/__tests__/performance/**/*.test.{js,jsx,ts,tsx}',
       ],
-      testTimeout: 30000,
     },
     {
       displayName: 'Security Tests',

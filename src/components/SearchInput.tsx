@@ -218,7 +218,7 @@ const SearchInput: React.FC<SearchInputProps> = ({
               )}
             </View>
           }
-          accessibilityRole="searchbox"
+          accessibilityRole="search"
           accessibilityLabel="Search input"
           accessibilityHint={`Enter at least ${minQueryLength} characters to see suggestions`}
         />
@@ -295,7 +295,6 @@ export const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
       <SearchInput
         {...searchProps}
         onChangeText={handleChangeText}
-        onFocus={handleFocus}
       />
 
       {showRecent && displayRecentSearches.length > 0 && (

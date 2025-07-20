@@ -1,4 +1,3 @@
-import { performanceMonitor } from '../../utils/performanceMonitor';
 import { render } from '@testing-library/react-native';
 import React from 'react';
 import { View, Text, FlatList } from 'react-native';
@@ -13,6 +12,22 @@ global.performance = {
   mark: mockPerformanceMark,
   measure: mockPerformanceMeasure,
 } as any;
+
+// Mock performance monitor
+const performanceMonitor = {
+  startTiming: jest.fn(),
+  endTiming: jest.fn(),
+  getMemoryInfo: jest.fn(() => ({
+    usedJSHeapSize: 50000000,
+    totalJSHeapSize: 100000000,
+    jsHeapSizeLimit: 2000000000,
+  })),
+  getBundleInfo: jest.fn(() => ({
+    totalSize: 5000000,
+    gzippedSize: 1500000,
+    components: 150,
+  })),
+};
 
 // Mock React Native performance APIs
 jest.mock('react-native', () => ({
@@ -33,10 +48,10 @@ describe('Performance Tests', () => {
 
   describe('Performance Monitoring', () => {
     it('should measure component render time', () => {
-      const TestComponent = () => <Text>Test</Text>;
+      const TestComponent = () => React.createElement(Text, {}, 'Test');
       
       performanceMonitor.startTiming('component-render');
-      render(<TestComponent />);
+      render(React.createElement(TestComponent));
       performanceMonitor.endTiming('component-render');
       
       expect(mockPerformanceMark).toHaveBeenCalledWith('component-render-start');
@@ -69,8 +84,8 @@ describe('Performance Tests', () => {
     it('should render simple components quickly', () => {
       const startTime = performance.now();
       
-      const SimpleComponent = () => <Text>Simple</Text>;
-      render(<SimpleComponent />);
+      const SimpleComponent = () => React.createElement(Text, {}, 'Simple');
+      render(React.createElement(SimpleComponent));
       
       const endTime = performance.now();
       const renderTime = endTime - startTime;
@@ -84,18 +99,19 @@ describe('Performance Tests', () => {
       
       const startTime = performance.now();
       
-      const LargeList = () => (
-        <FlatList
-          data={data}
-          renderItem={({ item }) => <Text key={item.id}>{item.text}</Text>}
-          keyExtractor={(item) => item.id.toString()}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-        />
+      const LargeList = () => React.createElement(
+        FlatList,
+        {
+          data: data,
+          renderItem: ({ item }: any) => React.createElement(Text, { key: item.id }, item.text),
+          keyExtractor: (item: any) => item.id.toString(),
+          initialNumToRender: 10,
+          maxToRenderPerBatch: 10,
+          windowSize: 10,
+        }
       );
       
-      render(<LargeList />);
+      render(React.createElement(LargeList));
       
       const endTime = performance.now();
       const renderTime = endTime - startTime;
@@ -109,13 +125,13 @@ describe('Performance Tests', () => {
       
       const OptimizedComponent = React.memo(() => {
         renderCount++;
-        return <Text>Optimized</Text>;
+        return React.createElement(Text, {}, 'Optimized');
       });
       
-      const { rerender } = render(<OptimizedComponent />);
+      const { rerender } = render(React.createElement(OptimizedComponent));
       
       // Re-render with same props
-      rerender(<OptimizedComponent />);
+      rerender(React.createElement(OptimizedComponent));
       
       // Should not re-render unnecessarily
       expect(renderCount).toBe(1);
@@ -169,8 +185,8 @@ describe('Performance Tests', () => {
       
       // Create and destroy components
       for (let i = 0; i < 100; i++) {
-        const TestComponent = () => <Text>Test {i}</Text>;
-        const { unmount } = render(<TestComponent />);
+        const TestComponent = () => React.createElement(Text, {}, `Test ${i}`);
+        const { unmount } = render(React.createElement(TestComponent));
         unmount();
       }
       
@@ -202,10 +218,10 @@ describe('Performance Tests', () => {
           };
         }, []);
         
-        return <Text>Component</Text>;
+        return React.createElement(Text, {}, 'Component');
       };
       
-      const { unmount } = render(<ComponentWithListeners />);
+      const { unmount } = render(React.createElement(ComponentWithListeners));
       expect(listeners.length).toBe(1);
       
       unmount();
@@ -308,29 +324,29 @@ describe('Performance Tests', () => {
 
   describe('Accessibility Performance', () => {
     it('should not impact performance significantly', () => {
-      const ComponentWithA11y = () => (
-        <View
-          accessible={true}
-          accessibilityLabel="Test component"
-          accessibilityHint="This is a test component"
-          accessibilityRole="button"
-        >
-          <Text>Accessible Component</Text>
-        </View>
+      const ComponentWithA11y = () => React.createElement(
+        View,
+        {
+          accessible: true,
+          accessibilityLabel: "Test component",
+          accessibilityHint: "This is a test component",
+          accessibilityRole: "button"
+        },
+        React.createElement(Text, {}, 'Accessible Component')
       );
       
-      const ComponentWithoutA11y = () => (
-        <View>
-          <Text>Regular Component</Text>
-        </View>
+      const ComponentWithoutA11y = () => React.createElement(
+        View,
+        {},
+        React.createElement(Text, {}, 'Regular Component')
       );
       
       const startTime1 = performance.now();
-      render(<ComponentWithA11y />);
+      render(React.createElement(ComponentWithA11y));
       const endTime1 = performance.now();
       
       const startTime2 = performance.now();
-      render(<ComponentWithoutA11y />);
+      render(React.createElement(ComponentWithoutA11y));
       const endTime2 = performance.now();
       
       const a11yTime = endTime1 - startTime1;

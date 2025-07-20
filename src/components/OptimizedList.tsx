@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
 export default memo(OptimizedList) as <T>(props: OptimizedListProps<T>) => JSX.Element;
 
 // Hook for managing list state
-export const useOptimizedList = <T>(
+export const useOptimizedList = <T,>(
   initialData: T[] = [],
   options: {
     pageSize?: number;
