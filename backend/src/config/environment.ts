@@ -9,6 +9,11 @@ export const config = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '3000', 10),
   
+  // Application configuration
+  APP_NAME: process.env.APP_NAME || 'AI Companion',
+  APP_URL: process.env.APP_URL || 'http://localhost:3000',
+  SUPPORT_EMAIL: process.env.SUPPORT_EMAIL || 'support@aicompanion.com',
+  
   // Firebase configuration
   FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
   FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
@@ -36,6 +41,20 @@ export const config = {
   // Database configuration (if you add a separate database later)
   DATABASE_URL: process.env.DATABASE_URL,
   
+  // Email configuration
+  EMAIL_HOST: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  EMAIL_PORT: parseInt(process.env.EMAIL_PORT || '587', 10),
+  EMAIL_SECURE: process.env.EMAIL_SECURE || 'false',
+  EMAIL_USER: process.env.EMAIL_USER || 'noreply@aicompanion.com',
+  EMAIL_PASSWORD: process.env.EMAIL_PASSWORD || '',
+  EMAIL_FROM: process.env.EMAIL_FROM || 'AI Companion <noreply@aicompanion.com>',
+  EMAIL_REPLY_TO: process.env.EMAIL_REPLY_TO || 'support@aicompanion.com',
+  
+  // SMS configuration (Twilio)
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
+  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || '',
+  
   // External services configuration
   SENTRY_DSN: process.env.SENTRY_DSN,
   
@@ -43,6 +62,8 @@ export const config = {
   ENABLE_RATE_LIMITING: process.env.ENABLE_RATE_LIMITING !== 'false',
   ENABLE_CORS: process.env.ENABLE_CORS !== 'false',
   ENABLE_HELMET: process.env.ENABLE_HELMET !== 'false',
+  ENABLE_EMAIL: process.env.ENABLE_EMAIL !== 'false',
+  ENABLE_SMS: process.env.ENABLE_SMS !== 'false',
 };
 
 // Validation function to ensure required environment variables are set
