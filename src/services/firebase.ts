@@ -24,4 +24,16 @@ if (getApps().length === 0) {
 export const auth: Auth = getAuth(app);
 export const firestore: Firestore = getFirestore(app);
 
+// Add missing exports for storage and firebaseService
+import { getStorage } from 'firebase/storage';
+export const storage = getStorage(app);
+
+// Create firebaseService object
+export const firebaseService = {
+  app,
+  auth,
+  firestore,
+  storage
+};
+
 export default app;

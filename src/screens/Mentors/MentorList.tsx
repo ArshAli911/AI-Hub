@@ -1,63 +1,75 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import {
-  useNavigation,
-  CompositeNavigationProp,
-} from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 import { MentorCard } from '../../components';
 import { Mentor } from '../../types';
-import { AppRoutes, Colors } from '../../constants';
-import { RootTabParamList, MentorsStackParamList, ProfileStackParamList } from '../../navigation/AppNavigator';
+import { MentorsStackParamList } from '../../navigation/AppNavigator';
 
 // Define the navigation prop for MentorListScreen
-type MentorListScreenNavigationProp = CompositeNavigationProp<
-  StackNavigationProp<MentorsStackParamList, typeof AppRoutes.Mentors>,
-  BottomTabNavigationProp<RootTabParamList>
->;
+type MentorListScreenNavigationProp = StackNavigationProp<MentorsStackParamList, 'Mentors'>;
 
 const mockMentors: Mentor[] = [
   {
+    _id: '1',
     id: '1',
+    firstName: 'John',
+    lastName: 'Doe',
     name: 'John Doe',
     title: 'AI/ML Specialist',
+    specialty: 'Machine Learning',
     bio: 'Experienced in machine learning and deep learning, with a focus on natural language processing.',
     imageUrl: 'https://via.placeholder.com/150',
     domain: 'Machine Learning',
     availability: 'Weekdays',
     price: 50,
+    hourlyRate: 50,
   },
   {
+    _id: '2',
     id: '2',
+    firstName: 'Jane',
+    lastName: 'Smith',
     name: 'Jane Smith',
     title: 'Data Science Lead',
+    specialty: 'Data Science',
     bio: 'Passionate about data-driven insights and building scalable data solutions.',
     imageUrl: 'https://via.placeholder.com/150',
     domain: 'Data Science',
     availability: 'Weekends',
     price: 75,
+    hourlyRate: 75,
   },
   {
+    _id: '3',
     id: '3',
+    firstName: 'Alice',
+    lastName: 'Johnson',
     name: 'Alice Johnson',
     title: 'NLP Expert',
+    specialty: 'Natural Language Processing',
     bio: 'Deep understanding of natural language processing techniques and applications.',
     imageUrl: 'https://via.placeholder.com/150',
     domain: 'Natural Language Processing',
     availability: 'Weekdays',
     price: 60,
+    hourlyRate: 60,
   },
   {
+    _id: '4',
     id: '4',
+    firstName: 'Bob',
+    lastName: 'Williams',
     name: 'Bob Williams',
     title: 'Computer Vision Engineer',
+    specialty: 'Computer Vision',
     bio: 'Skilled in image and video analysis using advanced computer vision models.',
     imageUrl: 'https://via.placeholder.com/150',
     domain: 'Computer Vision',
     availability: 'Weekends',
     price: 80,
+    hourlyRate: 80,
   },
 ];
 

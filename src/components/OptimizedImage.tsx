@@ -56,25 +56,54 @@ const OptimizedImage: React.FC<OptimizedImageProps> = memo(({
   }, [source, width, height, quality, format]);
 
   const processImageSource = () => {
-    if (typeof source === 'number') {
-      // Local image
-      setImageSource(source);
-      setLoading(false);
-      return;
-    }
-
-    if (typeof source === 'string' || (typeof source === 'object' && source.uri)) {
-      const uri = typeof source === 'string' ? source : source.uri;
+    try {
+      if (!source) {
+        // Handle null or undefined source
+        setImageSource(fallback ? { uri: fallback } : null);
+        setLoading(false);
+        setError(true);
+        return;
+      }
       
-      // Optimize remote images
-      const optimizedUri = optimizeImageUrl(uri, {
-        width,
-        height,
-        quality,
-        format,
-      });
+      if (typeof source === 'number') {
+        // Local image
+        setImageSource(source);
+        setLoading(false);
+        return;
+      }
 
-      setImageSource({ uri: optimizedUri });
+      if (typeof source === 'string' || (typeof source === 'object' && source.uri)) {
+        const uri = typeof source === 'string' ? source : source.uri;
+        
+        if (!uri) {
+          // Handle empty URI
+          setImageSource(fallback ? { uri: fallback } : null);
+          setLoading(false);
+          setError(true);
+          return;
+        }
+        
+        // Optimize remote images
+        const optimizedUri = optimizeImageUrl(uri, {
+          width,
+          height,
+          quality,
+          format,
+        });
+
+        setImageSource({ uri: optimizedUri });
+      } else {
+        // Invalid source type
+        console.warn('OptimizedImage: Invalid source type', source);
+        setImageSource(fallback ? { uri: fallback } : null);
+        setLoading(false);
+        setError(true);
+      }
+    } catch (error) {
+      console.error('Error processing image source:', error);
+      setImageSource(fallback ? { uri: fallback } : null);
+      setLoading(false);
+      setError(true);
     }
   };
 
@@ -88,45 +117,50 @@ const OptimizedImage: React.FC<OptimizedImageProps> = memo(({
     }
   ): string => {
     // If it's already optimized or a local file, return as is
-    if (uri.includes('?') || uri.startsWith('file://') || uri.startsWith('data:')) {
-      return uri;
+    if (!uri || uri.includes('?') || uri.startsWith('file://') || uri.startsWith('data:')) {
+      return uri || '';
     }
 
-    // For common image services, add optimization parameters
-    const url = new URL(uri);
-    
-    // Cloudinary optimization
-    if (url.hostname.includes('cloudinary.com')) {
-      const pathParts = url.pathname.split('/');
-      const uploadIndex = pathParts.indexOf('upload');
-      if (uploadIndex !== -1) {
-        const transformations = [];
-        if (options.width) transformations.push(`w_${options.width}`);
-        if (options.height) transformations.push(`h_${options.height}`);
-        if (options.quality) transformations.push(`q_${options.quality}`);
-        if (options.format) transformations.push(`f_${options.format}`);
-        
-        pathParts.splice(uploadIndex + 1, 0, transformations.join(','));
-        url.pathname = pathParts.join('/');
+    try {
+      // For common image services, add optimization parameters
+      const url = new URL(uri);
+      
+      // Cloudinary optimization
+      if (url.hostname.includes('cloudinary.com')) {
+        const pathParts = url.pathname.split('/');
+        const uploadIndex = pathParts.indexOf('upload');
+        if (uploadIndex !== -1) {
+          const transformations = [];
+          if (options.width) transformations.push(`w_${options.width}`);
+          if (options.height) transformations.push(`h_${options.height}`);
+          if (options.quality) transformations.push(`q_${options.quality}`);
+          if (options.format) transformations.push(`f_${options.format}`);
+          
+          pathParts.splice(uploadIndex + 1, 0, transformations.join(','));
+          url.pathname = pathParts.join('/');
+        }
       }
-    }
-    
-    // Firebase Storage optimization
-    else if (url.hostname.includes('firebasestorage.googleapis.com')) {
-      if (options.width) url.searchParams.set('w', options.width.toString());
-      if (options.height) url.searchParams.set('h', options.height.toString());
-      if (options.quality) url.searchParams.set('q', options.quality.toString());
-    }
-    
-    // Generic optimization for other services
-    else {
-      if (options.width) url.searchParams.set('width', options.width.toString());
-      if (options.height) url.searchParams.set('height', options.height.toString());
-      if (options.quality) url.searchParams.set('quality', options.quality.toString());
-      if (options.format) url.searchParams.set('format', options.format);
-    }
+      
+      // Firebase Storage optimization
+      else if (url.hostname.includes('firebasestorage.googleapis.com')) {
+        if (options.width) url.searchParams.set('w', options.width.toString());
+        if (options.height) url.searchParams.set('h', options.height.toString());
+        if (options.quality) url.searchParams.set('q', options.quality.toString());
+      }
+      
+      // Generic optimization for other services
+      else {
+        if (options.width) url.searchParams.set('width', options.width.toString());
+        if (options.height) url.searchParams.set('height', options.height.toString());
+        if (options.quality) url.searchParams.set('quality', options.quality.toString());
+        if (options.format) url.searchParams.set('format', options.format);
+      }
 
-    return url.toString();
+      return url.toString();
+    } catch (error) {
+      console.warn('Error optimizing image URL:', error);
+      return uri || '';
+    }
   };
 
   const handleLoadStart = () => {

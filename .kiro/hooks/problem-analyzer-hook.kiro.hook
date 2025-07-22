@@ -4,7 +4,7 @@
   "description": "Monitors the codebase for stability and automatically analyzes problems in the terminal's problem tab, then fixes those issues when the code has been stable for more than 1 minute",
   "version": "1",
   "when": {
-    "type": "fileEdited",
+    "type": "userTriggered",
     "patterns": [
       "src/**/*.ts",
       "src/**/*.tsx",

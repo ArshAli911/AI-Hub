@@ -1,6 +1,7 @@
 // Haste implementation for Metro bundler optimization
 
 const path = require('path');
+const crypto = require('crypto');
 
 /**
  * Custom Haste implementation for better module resolution
@@ -73,5 +74,14 @@ module.exports = {
     }
     
     return dependencies;
+  },
+
+  /**
+   * Get cache key for the file
+   * This is required by Metro bundler
+   */
+  getCacheKey() {
+    const currentTime = new Date().getTime();
+    return crypto.createHash('md5').update(String(currentTime)).digest('hex');
   },
 };

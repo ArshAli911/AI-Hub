@@ -8,4 +8,4 @@ export const AppRoutes = {
   Prototype: 'Prototype',
   Splash: 'Splash',
   // Add more app routes as needed
-}; 
+} as const; 

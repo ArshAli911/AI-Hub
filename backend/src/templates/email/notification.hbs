@@ -1,0 +1,18 @@
+{{#> layout subject=notification.title}}
+<h2>{{notification.title}}</h2>
+
+<p>Hello {{name}},</p>
+
+<p>{{notification.message}}</p>
+
+{{#if notification.actionUrl}}
+<div style="text-align: center;">
+  <a href="{{notification.actionUrl}}" class="button">{{#if notification.actionText}}{{notification.actionText}}{{else}}View Details{{/if}}</a>
+</div>
+{{/if}}
+
+<p>If you have any questions, please don't hesitate to contact our support team.</p>
+
+<p>Best regards,<br>
+The {{appName}} Team</p>
+{{/layout}}

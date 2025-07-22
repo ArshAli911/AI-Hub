@@ -1,0 +1,35 @@
+{{#> layout subject="Your Session Starts Soon"}}
+<h2>Your Session Starts Soon!</h2>
+
+<p>Hello {{name}},</p>
+
+<p>This is a friendly reminder that your scheduled session is starting soon.</p>
+
+<div class="info-box">
+  <p><strong>Session:</strong> {{sessionDetails.title}}</p>
+  <p><strong>Date:</strong> {{sessionDetails.date}}</p>
+  <p><strong>Time:</strong> {{sessionDetails.time}} (in about 1 hour)</p>
+  <p><strong>Mentor:</strong> {{sessionDetails.mentorName}}</p>
+</div>
+
+<p>When it's time for your session, click the button below to join:</p>
+
+<div style="text-align: center;">
+  <a href="{{sessionDetails.joinUrl}}" class="button">Join Session Now</a>
+</div>
+
+<div class="info-box">
+  <p><strong>Preparation Tips:</strong></p>
+  <ul>
+    <li>Find a quiet space with minimal background noise</li>
+    <li>Test your camera and microphone</li>
+    <li>Have any relevant materials or questions ready</li>
+    <li>Join a few minutes early to ensure everything is working</li>
+  </ul>
+</div>
+
+<p>If you need to reschedule, please contact us as soon as possible.</p>
+
+<p>Best regards,<br>
+The {{appName}} Team</p>
+{{/layout}}

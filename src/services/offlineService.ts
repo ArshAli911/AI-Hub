@@ -344,7 +344,7 @@ class OfflineService {
   /**
    * Force sync now
    */
-  async forcSync(): Promise<void> {
+  async forceSync(): Promise<void> {
     if (this.isOnline) {
       await this.syncPendingActions();
     } else {

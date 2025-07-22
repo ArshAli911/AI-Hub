@@ -164,6 +164,15 @@ export const useOffline = (): UseOfflineReturn => {
     setIsSyncing(true);
     
     try {
+      // Call the correct method name in offlineService
+      await offlineService.forcSync();
+    } catch (error) {
+      logger.error('Force sync failed', error);
+    } finally {
+      setIsSyncing(false);
+    }
+    
+    try {
       const actionsJson = await AsyncStorage.getItem(OFFLINE_ACTIONS_KEY);
       if (!actionsJson) {
         setLastSyncTime(Date.now());

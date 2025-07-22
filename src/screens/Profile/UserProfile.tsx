@@ -13,6 +13,7 @@ const mockUser: User = {
   // For display purposes, adding a profile picture and some stats
   name: 'John Doe',
   profilePicture: 'https://via.placeholder.com/150/007BFF/FFFFFF?text=JD',
+  photoURL: 'https://via.placeholder.com/150/007BFF/FFFFFF?text=JD',
   bio: 'Passionate about AI and technology. Always learning and exploring new ideas.',
   followers: 120,
   following: 80,

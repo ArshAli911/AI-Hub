@@ -1,477 +1,584 @@
-import { Request, Response } from 'express';
-import { ChatService } from '../services/chatService';
-import { WebSocketService } from '../services/websocketService';
-import { ChatRoom, ChatMessage } from '../types/realtime';
+import { Server as SocketIOServer } from 'socket.io';
+import { Server as HttpServer } from 'http';
+import { firestore } from '../config/firebaseAdmin';
 import logger from '../services/loggerService';
+import { verifyToken } from '../middleware/authMiddleware';
 
-// Create a new chat room
-export const createChatRoom = async (req: Request, res: Response) => {
-  try {
-    const { name, type, participants } = req.body;
-    const userId = req.user?.uid;
-    const userEmail = req.user?.email;
+// User connection tracking
+interface ConnectedUser {
+  userId: string;
+  socketId: string;
+  rooms: Set<string>;
+  lastActivity: Date;
+}
 
-    if (!userId || !userEmail) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
+export class RealtimeController {
+  private io: SocketIOServer;
+  private connectedUsers: Map<string, ConnectedUser> = new Map();
+  private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set of socketIds
 
-    if (!name || !type || !participants || !Array.isArray(participants)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid input',
-        message: 'name, type, and participants array are required',
-      });
-    }
-
-    // Ensure creator is included in participants
-    const allParticipants = participants.includes(userId) 
-      ? participants 
-      : [...participants, userId];
-
-    const roomData = {
-      name,
-      type,
-      participants: allParticipants,
-      createdBy: userId,
-    };
-
-    const chatRoom = await ChatService.createRoom(roomData, userId, userEmail);
-
-    res.status(201).json({
-      success: true,
-      message: 'Chat room created successfully',
-      data: chatRoom,
+  constructor(server: HttpServer) {
+    this.io = new SocketIOServer(server, {
+      cors: {
+        origin: process.env.CORS_ORIGIN || '*',
+        methods: ['GET', 'POST'],
+        credentials: true
+      }
     });
-  } catch (error) {
-    logger.error('Error creating chat room:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create chat room',
-      message: error instanceof Error ? error.message : 'Unknown error',
+
+    this.setupSocketHandlers();
+    this.setupPeriodicTasks();
+
+    logger.info('Realtime controller initialized');
+  }
+
+  /**
+   * Set up socket event handlers
+   */
+  private setupSocketHandlers(): void {
+    this.io.use(async (socket, next) => {
+      try {
+        // Get token from handshake
+        const token = socket.handshake.auth.token || socket.handshake.query.token;
+        
+        if (!token) {
+          return next(new Error('Authentication token is required'));
+        }
+        
+        // Verify token
+        const user = await verifyToken(token);
+        
+        if (!user) {
+          return next(new Error('Invalid authentication token'));
+        }
+        
+        // Attach user to socket
+        socket.data.user = user;
+        next();
+      } catch (error) {
+        logger.error('Socket authentication error:', error);
+        next(new Error('Authentication failed'));
+      }
+    });
+
+    this.io.on('connection', (socket) => {
+      const user = socket.data.user;
+      
+      if (!user) {
+        socket.disconnect();
+        return;
+      }
+      
+      logger.info(`User ${user.uid} connected with socket ${socket.id}`);
+      
+      // Track connected user
+      this.addConnectedUser(user.uid, socket.id);
+      
+      // Join user's personal room
+      socket.join(`user:${user.uid}`);
+      
+      // Handle events
+      socket.on('disconnect', () => this.handleDisconnect(socket));
+      socket.on('join_room', (data) => this.handleJoinRoom(socket, data));
+      socket.on('leave_room', (data) => this.handleLeaveRoom(socket, data));
+      socket.on('send_message', (data) => this.handleSendMessage(socket, data));
+      socket.on('typing_start', (data) => this.handleTypingStart(socket, data));
+      socket.on('typing_end', (data) => this.handleTypingEnd(socket, data));
+      socket.on('presence_update', (data) => this.handlePresenceUpdate(socket, data));
+      socket.on('error', (error) => this.handleError(socket, error));
+      
+      // Send initial data
+      this.sendInitialData(socket);
     });
   }
-};
 
-// Get user's chat rooms
-export const getUserRooms = async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    const rooms = await ChatService.getUserRooms(userId);
-
-    res.json({
-      success: true,
-      data: rooms,
-    });
-  } catch (error) {
-    logger.error('Error getting user rooms:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get user rooms',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
+  /**
+   * Set up periodic tasks
+   */
+  private setupPeriodicTasks(): void {
+    // Clean up inactive users every 5 minutes
+    setInterval(() => {
+      this.cleanupInactiveUsers();
+    }, 5 * 60 * 1000);
+    
+    // Update user presence every minute
+    setInterval(() => {
+      this.updateUserPresence();
+    }, 60 * 1000);
   }
-};
 
-// Get room details
-export const getRoom = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    const room = await ChatService.getRoom(roomId);
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        error: 'Room not found',
-        message: 'The specified chat room does not exist',
-      });
-    }
-
-    // Check if user is a participant
-    if (!room.participants.includes(userId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-        message: 'You are not a participant in this room',
-      });
-    }
-
-    res.json({
-      success: true,
-      data: room,
-    });
-  } catch (error) {
-    logger.error('Error getting room:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get room',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-};
-
-// Add user to room
-export const addUserToRoom = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const { userId } = req.body;
-    const adminId = req.user?.uid;
-    const adminEmail = req.user?.email;
-
-    if (!adminId || !adminEmail) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid input',
-        message: 'userId is required',
-      });
-    }
-
-    await ChatService.addUserToRoom(roomId, userId, adminId, adminEmail);
-
-    res.json({
-      success: true,
-      message: 'User added to room successfully',
-    });
-  } catch (error) {
-    logger.error('Error adding user to room:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to add user to room',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-};
-
-// Remove user from room
-export const removeUserFromRoom = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const { userId } = req.body;
-    const adminId = req.user?.uid;
-    const adminEmail = req.user?.email;
-
-    if (!adminId || !adminEmail) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid input',
-        message: 'userId is required',
-      });
-    }
-
-    await ChatService.removeUserFromRoom(roomId, userId, adminId, adminEmail);
-
-    res.json({
-      success: true,
-      message: 'User removed from room successfully',
-    });
-  } catch (error) {
-    logger.error('Error removing user from room:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to remove user from room',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-};
-
-// Get room messages
-export const getRoomMessages = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const { limit = 50, before } = req.query;
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    // Check if user is in the room
-    const room = await ChatService.getRoom(roomId);
-    if (!room || !room.participants.includes(userId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-        message: 'You are not a participant in this room',
-      });
-    }
-
-    const messages = await ChatService.getRoomMessages(
-      roomId,
-      parseInt(limit as string),
-      before ? parseInt(before as string) : undefined
-    );
-
-    // Mark messages as read
-    await ChatService.markMessagesAsRead(roomId, userId);
-
-    res.json({
-      success: true,
-      data: messages,
-      pagination: {
-        limit: parseInt(limit as string),
-        hasMore: messages.length === parseInt(limit as string),
-      },
-    });
-  } catch (error) {
-    logger.error('Error getting room messages:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get room messages',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-};
-
-// Send message to room
-export const sendMessage = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const { message, type = 'text', metadata } = req.body;
-    const userId = req.user?.uid;
-    const userEmail = req.user?.email;
-
-    if (!userId || !userEmail) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid input',
-        message: 'message is required',
-      });
-    }
-
-    const chatMessage = await ChatService.sendMessage(
-      roomId,
+  /**
+   * Add connected user
+   */
+  private addConnectedUser(userId: string, socketId: string): void {
+    // Track user connection
+    this.connectedUsers.set(socketId, {
       userId,
-      userEmail,
+      socketId,
+      rooms: new Set(),
+      lastActivity: new Date()
+    });
+    
+    // Track user's sockets
+    if (!this.userSockets.has(userId)) {
+      this.userSockets.set(userId, new Set());
+    }
+    this.userSockets.get(userId)!.add(socketId);
+    
+    // Update user's online status in database
+    this.updateUserOnlineStatus(userId, true);
+  }
+
+  /**
+   * Remove connected user
+   */
+  private removeConnectedUser(socketId: string): void {
+    const user = this.connectedUsers.get(socketId);
+    
+    if (user) {
+      // Remove from user sockets map
+      const userSocketsSet = this.userSockets.get(user.userId);
+      if (userSocketsSet) {
+        userSocketsSet.delete(socketId);
+        
+        // If no more sockets for this user, update online status
+        if (userSocketsSet.size === 0) {
+          this.userSockets.delete(user.userId);
+          this.updateUserOnlineStatus(user.userId, false);
+        }
+      }
+      
+      // Remove from connected users map
+      this.connectedUsers.delete(socketId);
+    }
+  }
+
+  /**
+   * Update user's online status in database
+   */
+  private async updateUserOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
+    try {
+      await firestore.collection('users').doc(userId).update({
+        isOnline,
+        lastSeen: new Date(),
+      });
+      
+      // Broadcast user status change to relevant rooms
+      this.io.to(`user_status`).emit('user_status_change', {
+        userId,
+        isOnline,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      logger.error(`Error updating online status for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Handle socket disconnect
+   */
+  private handleDisconnect(socket: any): void {
+    const user = socket.data.user;
+    
+    if (user) {
+      logger.info(`User ${user.uid} disconnected from socket ${socket.id}`);
+      this.removeConnectedUser(socket.id);
+    }
+  }
+
+  /**
+   * Handle join room event
+   */
+  private handleJoinRoom(socket: any, data: { roomId: string; userData?: any }): void {
+    const user = socket.data.user;
+    const { roomId, userData } = data;
+    
+    if (!user || !roomId) {
+      return;
+    }
+    
+    // Join socket to room
+    socket.join(roomId);
+    
+    // Update connected user's rooms
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.rooms.add(roomId);
+      connectedUser.lastActivity = new Date();
+    }
+    
+    logger.info(`User ${user.uid} joined room ${roomId}`);
+    
+    // Notify room members
+    socket.to(roomId).emit('user_joined', {
+      userId: user.uid,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
+      roomId,
+      timestamp: new Date(),
+      userData
+    });
+  }
+
+  /**
+   * Handle leave room event
+   */
+  private handleLeaveRoom(socket: any, data: { roomId: string }): void {
+    const user = socket.data.user;
+    const { roomId } = data;
+    
+    if (!user || !roomId) {
+      return;
+    }
+    
+    // Leave socket from room
+    socket.leave(roomId);
+    
+    // Update connected user's rooms
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.rooms.delete(roomId);
+      connectedUser.lastActivity = new Date();
+    }
+    
+    logger.info(`User ${user.uid} left room ${roomId}`);
+    
+    // Notify room members
+    socket.to(roomId).emit('user_left', {
+      userId: user.uid,
+      roomId,
+      timestamp: new Date()
+    });
+  }
+
+  /**
+   * Handle send message event
+   */
+  private handleSendMessage(socket: any, data: { 
+    roomId: string; 
+    message: string; 
+    type?: string;
+    metadata?: any;
+  }): void {
+    const user = socket.data.user;
+    const { roomId, message, type = 'text', metadata } = data;
+    
+    if (!user || !roomId || !message) {
+      return;
+    }
+    
+    // Update connected user's last activity
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.lastActivity = new Date();
+    }
+    
+    // Create message object
+    const messageData = {
+      id: this.generateId(),
+      roomId,
+      userId: user.uid,
+      displayName: user.displayName,
+      photoURL: user.photoURL,
       message,
       type,
-      metadata
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Message sent successfully',
-      data: chatMessage,
-    });
-  } catch (error) {
-    logger.error('Error sending message:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to send message',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
+      metadata,
+      timestamp: new Date()
+    };
+    
+    // Store message in database
+    this.storeMessage(messageData);
+    
+    // Broadcast message to room
+    this.io.to(roomId).emit('new_message', messageData);
+    
+    logger.debug(`User ${user.uid} sent message to room ${roomId}`);
   }
-};
 
-// Delete message
-export const deleteMessage = async (req: Request, res: Response) => {
-  try {
-    const { messageId } = req.params;
-    const userId = req.user?.uid;
-    const userEmail = req.user?.email;
-
-    if (!userId || !userEmail) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
+  /**
+   * Handle typing start event
+   */
+  private handleTypingStart(socket: any, data: { roomId: string }): void {
+    const user = socket.data.user;
+    const { roomId } = data;
+    
+    if (!user || !roomId) {
+      return;
     }
-
-    await ChatService.deleteMessage(messageId, userId, userEmail);
-
-    res.json({
-      success: true,
-      message: 'Message deleted successfully',
-    });
-  } catch (error) {
-    logger.error('Error deleting message:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to delete message',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-};
-
-// Search messages
-export const searchMessages = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const { query, limit = 20 } = req.query;
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
+    
+    // Update connected user's last activity
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.lastActivity = new Date();
     }
-
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid input',
-        message: 'query is required',
-      });
-    }
-
-    // Check if user is in the room
-    const room = await ChatService.getRoom(roomId);
-    if (!room || !room.participants.includes(userId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-        message: 'You are not a participant in this room',
-      });
-    }
-
-    const messages = await ChatService.searchMessages(
+    
+    // Broadcast typing start to room
+    socket.to(roomId).emit('typing_start', {
+      userId: user.uid,
+      displayName: user.displayName,
       roomId,
-      query as string,
-      parseInt(limit as string)
-    );
-
-    res.json({
-      success: true,
-      data: messages,
-    });
-  } catch (error) {
-    logger.error('Error searching messages:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to search messages',
-      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date()
     });
   }
+
+  /**
+   * Handle typing end event
+   */
+  private handleTypingEnd(socket: any, data: { roomId: string }): void {
+    const user = socket.data.user;
+    const { roomId } = data;
+    
+    if (!user || !roomId) {
+      return;
+    }
+    
+    // Update connected user's last activity
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.lastActivity = new Date();
+    }
+    
+    // Broadcast typing end to room
+    socket.to(roomId).emit('typing_end', {
+      userId: user.uid,
+      roomId,
+      timestamp: new Date()
+    });
+  }
+
+  /**
+   * Handle presence update event
+   */
+  private handlePresenceUpdate(socket: any, data: { status: string; activity?: string }): void {
+    const user = socket.data.user;
+    const { status, activity } = data;
+    
+    if (!user) {
+      return;
+    }
+    
+    // Update connected user's last activity
+    const connectedUser = this.connectedUsers.get(socket.id);
+    if (connectedUser) {
+      connectedUser.lastActivity = new Date();
+    }
+    
+    // Update user's presence in database
+    this.updateUserPresence(user.uid, status, activity);
+  }
+
+  /**
+   * Handle error event
+   */
+  private handleError(socket: any, error: any): void {
+    const user = socket.data.user;
+    
+    logger.error(`Socket error for user ${user?.uid || 'unknown'}:`, error);
+  }
+
+  /**
+   * Send initial data to connected user
+   */
+  private async sendInitialData(socket: any): Promise<void> {
+    const user = socket.data.user;
+    
+    if (!user) {
+      return;
+    }
+    
+    try {
+      // Send unread notifications count
+      const unreadNotificationsSnapshot = await firestore
+        .collection('notifications')
+        .where('userId', '==', user.uid)
+        .where('read', '==', false)
+        .count()
+        .get();
+      
+      socket.emit('unread_notifications_count', {
+        count: unreadNotificationsSnapshot.data().count
+      });
+      
+      // Send unread messages count
+      const unreadMessagesSnapshot = await firestore
+        .collection('messages')
+        .where('recipientId', '==', user.uid)
+        .where('read', '==', false)
+        .count()
+        .get();
+      
+      socket.emit('unread_messages_count', {
+        count: unreadMessagesSnapshot.data().count
+      });
+      
+      // Send online friends
+      const friendsSnapshot = await firestore
+        .collection('friendships')
+        .where('userId', '==', user.uid)
+        .where('status', '==', 'accepted')
+        .get();
+      
+      const friendIds = friendsSnapshot.docs.map(doc => doc.data().friendId);
+      
+      const onlineFriends = Array.from(this.userSockets.keys())
+        .filter(userId => friendIds.includes(userId));
+      
+      socket.emit('online_friends', {
+        friends: onlineFriends
+      });
+    } catch (error) {
+      logger.error(`Error sending initial data to user ${user.uid}:`, error);
+    }
+  }
+
+  /**
+   * Store message in database
+   */
+  private async storeMessage(message: any): Promise<void> {
+    try {
+      await firestore.collection('messages').add(message);
+    } catch (error) {
+      logger.error('Error storing message:', error);
+    }
+  }
+
+  /**
+   * Update user presence
+   */
+  private async updateUserPresence(userId: string, status: string, activity?: string): Promise<void> {
+    try {
+      await firestore.collection('users').doc(userId).update({
+        presenceStatus: status,
+        presenceActivity: activity || null,
+        lastSeen: new Date()
+      });
+      
+      // Broadcast presence update to friends
+      const friendsSnapshot = await firestore
+        .collection('friendships')
+        .where('friendId', '==', userId)
+        .where('status', '==', 'accepted')
+        .get();
+      
+      const friendIds = friendsSnapshot.docs.map(doc => doc.data().userId);
+      
+      friendIds.forEach(friendId => {
+        this.io.to(`user:${friendId}`).emit('friend_presence_update', {
+          userId,
+          status,
+          activity,
+          timestamp: new Date()
+        });
+      });
+    } catch (error) {
+      logger.error(`Error updating presence for user ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Clean up inactive users
+   */
+  private cleanupInactiveUsers(): void {
+    const now = new Date();
+    const inactivityThreshold = 30 * 60 * 1000; // 30 minutes
+    
+    for (const [socketId, user] of this.connectedUsers.entries()) {
+      const inactiveTime = now.getTime() - user.lastActivity.getTime();
+      
+      if (inactiveTime > inactivityThreshold) {
+        logger.info(`Cleaning up inactive user ${user.userId} with socket ${socketId}`);
+        
+        // Disconnect socket
+        const socket = this.io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.disconnect(true);
+        }
+        
+        // Remove user
+        this.removeConnectedUser(socketId);
+      }
+    }
+  }
+
+  /**
+   * Update user presence for all connected users
+   */
+  private updateUserPresence(): void {
+    for (const [userId, socketIds] of this.userSockets.entries()) {
+      if (socketIds.size > 0) {
+        this.updateUserOnlineStatus(userId, true);
+      }
+    }
+  }
+
+  /**
+   * Send notification to user
+   */
+  public sendNotification(userId: string, notification: any): void {
+    this.io.to(`user:${userId}`).emit('notification', notification);
+  }
+
+  /**
+   * Send notification to multiple users
+   */
+  public sendNotificationToUsers(userIds: string[], notification: any): void {
+    userIds.forEach(userId => {
+      this.sendNotification(userId, notification);
+    });
+  }
+
+  /**
+   * Send notification to room
+   */
+  public sendNotificationToRoom(roomId: string, notification: any): void {
+    this.io.to(roomId).emit('notification', notification);
+  }
+
+  /**
+   * Send event to user
+   */
+  public sendEvent(userId: string, eventName: string, data: any): void {
+    this.io.to(`user:${userId}`).emit(eventName, data);
+  }
+
+  /**
+   * Send event to room
+   */
+  public sendEventToRoom(roomId: string, eventName: string, data: any): void {
+    this.io.to(roomId).emit(eventName, data);
+  }
+
+  /**
+   * Get connected users count
+   */
+  public getConnectedUsersCount(): number {
+    return this.userSockets.size;
+  }
+
+  /**
+   * Check if user is online
+   */
+  public isUserOnline(userId: string): boolean {
+    return this.userSockets.has(userId) && this.userSockets.get(userId)!.size > 0;
+  }
+
+  /**
+   * Generate unique ID
+   */
+  private generateId(): string {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
+}
+
+let realtimeController: RealtimeController | null = null;
+
+export const initializeRealtimeController = (server: HttpServer): RealtimeController => {
+  if (!realtimeController) {
+    realtimeController = new RealtimeController(server);
+  }
+  return realtimeController;
 };
 
-// Get room statistics
-export const getRoomStats = async (req: Request, res: Response) => {
-  try {
-    const { roomId } = req.params;
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    // Check if user is in the room
-    const room = await ChatService.getRoom(roomId);
-    if (!room || !room.participants.includes(userId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied',
-        message: 'You are not a participant in this room',
-      });
-    }
-
-    const stats = await ChatService.getRoomStats(roomId);
-
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    logger.error('Error getting room stats:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get room stats',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
+export const getRealtimeController = (): RealtimeController | null => {
+  return realtimeController;
 };
-
-// Get WebSocket connection status
-export const getConnectionStatus = async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.uid;
-
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized',
-        message: 'Authentication required',
-      });
-    }
-
-    const status = WebSocketService.getUserStatus(userId);
-    const connectedUsers = WebSocketService.getConnectedUsers();
-
-    res.json({
-      success: true,
-      data: {
-        userStatus: status,
-        totalConnected: connectedUsers.length,
-        connectedUsers: connectedUsers.map(user => ({
-          userId: user.userId,
-          email: user.email,
-          displayName: user.displayName,
-          role: user.role,
-          connectedAt: user.connectedAt,
-        })),
-      },
-    });
-  } catch (error) {
-    logger.error('Error getting connection status:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to get connection status',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-}; 

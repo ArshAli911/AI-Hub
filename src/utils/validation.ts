@@ -119,4 +119,30 @@ export const validateForm = (validations: (() => ValidationResult)[]): Validatio
     }
   }
   return { isValid: true };
+};
+
+// Generic input validation function for security tests
+export const validateInput = (input: any, rules: any[] = []): ValidationResult => {
+  if (!input) {
+    return { isValid: false, error: 'Input is required' };
+  }
+  
+  // Basic validation - can be extended based on rules
+  if (typeof input === 'string' && input.trim().length === 0) {
+    return { isValid: false, error: 'Input cannot be empty' };
+  }
+  
+  // Apply validation rules if provided
+  if (rules.length > 0) {
+    for (const rule of rules) {
+      if (rule.validate && typeof rule.validate === 'function') {
+        const result = rule.validate(input);
+        if (!result.isValid) {
+          return result;
+        }
+      }
+    }
+  }
+  
+  return { isValid: true };
 }; 

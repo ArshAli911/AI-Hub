@@ -55,11 +55,11 @@ const CreatePost: React.FC<CreatePostProps> = ({ navigation }) => {
       <Text style={styles.label}>Select Category:</Text>
       <View style={styles.pickerContainer}>
         <Picker
-          selectedValue={selectedCategory}
-          onValueChange={(itemValue: string) => setSelectedCategory(itemValue)}
+          selectedValue={selectedCategory || ''}
+          onValueChange={(itemValue: string) => setSelectedCategory(itemValue || null)}
           style={styles.picker}
         >
-          <Picker.Item label="-- Select a Category --" value={null} />
+          <Picker.Item label="-- Select a Category --" value="" />
           {mockCategories.map((category) => (
             <Picker.Item key={category.id} label={category.name} value={category.id} />
           ))}

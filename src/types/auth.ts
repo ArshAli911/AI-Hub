@@ -6,6 +6,8 @@ export interface User {
   name?: string;
   displayName?: string; // Add displayName
   photoURL?: string; // Rename profilePicture to photoURL
+  profilePicture?: string; // Keep for backward compatibility
+  avatar?: string; // Add avatar property
   bio?: string;
   posts?: number;
   followers?: number;

@@ -113,8 +113,6 @@ export { default as marketplaceApi } from '../api/marketplace.api';
 
 // Advanced services
 export { default as websocketService } from './websocketService';
-export { default as paymentService } from './paymentService';
-export { default as videoCallService } from './videoCallService';
 export { default as offlineService } from './offlineService';
 
 // Production services
@@ -148,19 +146,7 @@ export type {
   WebSocketListener
 } from './websocketService';
 
-export type {
-  PaymentMethod,
-  PaymentIntent,
-  Subscription,
-  Invoice
-} from './paymentService';
-
-export type {
-  VideoCallRoom,
-  VideoCallParticipant,
-  VideoCallSettings,
-  VideoCallMessage
-} from './videoCallService';
+// Payment and video call types removed
 
 export type {
   OfflineAction,

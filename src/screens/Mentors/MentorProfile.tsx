@@ -7,26 +7,8 @@ import { Mentor, MentorSession } from '../../types';
 import { Ionicons } from '@expo/vector-icons';
 import { AppRoutes, Colors } from '../../constants';
 
-// Define the specific stack param lists for navigation (copy from AppNavigator to ensure consistency)
-type MentorsStackParamList = {
-  [AppRoutes.Mentors]: undefined;
-  MentorProfile: { mentorId: string };
-};
-
-type ProfileStackParamList = {
-  [AppRoutes.Profile]: undefined;
-  EditProfile: undefined;
-};
-
-// Define the Root Tab Navigator's param list (copy from AppNavigator to ensure consistency)
-export type RootTabParamList = {
-  [AppRoutes.Home]: any;
-  [AppRoutes.Mentors]: any;
-  [AppRoutes.Community]: any;
-  [AppRoutes.Marketplace]: any;
-  [AppRoutes.Prototype]: any;
-  [AppRoutes.Profile]: any;
-};
+// Import the types from navigation instead of redefining them
+import { MentorsStackParamList } from '../../navigation/AppNavigator';
 
 type MentorProfileRouteProp = RouteProp<{ MentorProfile: { mentorId: string } }, 'MentorProfile'>;
 
@@ -37,9 +19,13 @@ interface MentorProfileProps {
 
 // Mock data for a mentor profile
 const mockMentor: Mentor = {
+  _id: '1',
   id: '1',
+  firstName: 'John',
+  lastName: 'Doe',
   name: 'John Doe',
   title: 'AI/ML Specialist',
+  specialty: 'Machine Learning',
   bio: 'Experienced in machine learning and deep learning, with a focus on natural language processing. I have worked on various projects, from predictive analytics to natural language understanding, and am passionate about sharing my knowledge.',
   imageUrl: 'https://via.placeholder.com/150',
   domain: 'Machine Learning',

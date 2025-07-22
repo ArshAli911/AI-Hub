@@ -18,7 +18,13 @@ admin.initializeApp({
 console.log('Firebase Admin SDK initialized successfully!');
 
 // Export the initialized services
-export const authAdmin = admin.auth();
-export const firestoreAdmin = admin.firestore();
-export const messagingAdmin = admin.messaging();
-export const storageAdmin = admin.storage(); // Uncommented for server-side storage access 
+export const auth = admin.auth();
+export const firestore = admin.firestore();
+export const messaging = admin.messaging();
+export const storage = admin.storage();
+
+// Legacy exports for backward compatibility
+export const authAdmin = auth;
+export const firestoreAdmin = firestore;
+export const messagingAdmin = messaging;
+export const storageAdmin = storage; 

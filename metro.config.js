@@ -1,6 +1,16 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const { resolver: defaultResolver } = getDefaultConfig(__dirname);
 
+// Workaround for Jimp error
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  if (args[0] && typeof args[0] === 'string' && args[0].includes('Could not find MIME for Buffer')) {
+    // Suppress the specific Jimp error
+    return;
+  }
+  originalConsoleError(...args);
+};
+
 const config = getDefaultConfig(__dirname);
 
 // Bundle optimization configurations
@@ -93,14 +103,15 @@ config.serializer = {
 };
 
 // Cache configuration for faster builds
-config.cacheStores = [
-  {
-    name: 'FileStore',
-    options: {
-      root: require('path').join(__dirname, '.metro-cache'),
-    },
-  },
-];
+// Disable custom cache configuration to use Metro's default
+// config.cacheStores = [
+//   {
+//     name: 'FileStore',
+//     options: {
+//       root: require('path').join(__dirname, '.metro-cache'),
+//     },
+//   },
+// ];
 
 // Resolver configuration for better performance
 config.resolver.resolverMainFields = ['react-native', 'browser', 'main'];

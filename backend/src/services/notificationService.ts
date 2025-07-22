@@ -1,310 +1,506 @@
-import { getFirestore } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
-import { RealTimeNotification } from '../types/realtime';
+import { firestore } from '../config/firebaseAdmin';
+import { emailService } from './emailService';
+import { smsService } from './smsService';
 import { WebSocketService } from './websocketService';
-import { AuditService } from './auditService';
 import logger from './loggerService';
+import { config } from '../config/environment';
+
+export interface NotificationOptions {
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  data?: Record<string, any>;
+  actionUrl?: string;
+  actionText?: string;
+  sendEmail?: boolean;
+  sendSms?: boolean;
+  sendPush?: boolean;
+  sendRealtime?: boolean;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  data?: Record<string, any>;
+  actionUrl?: string;
+  actionText?: string;
+  read: boolean;
+  readAt?: Date;
+  createdAt: Date;
+  channels: {
+    email?: {
+      sent: boolean;
+      sentAt?: Date;
+    };
+    sms?: {
+      sent: boolean;
+      sentAt?: Date;
+    };
+    push?: {
+      sent: boolean;
+      sentAt?: Date;
+    };
+    realtime?: {
+      sent: boolean;
+      sentAt?: Date;
+    };
+  };
+}
 
 export class NotificationService {
-  private static db = getFirestore();
-  private static messaging = getMessaging();
-
   /**
-   * Send notification to specific device
+   * Send notification through multiple channels
    */
-  static async sendToDevice(
-    token: string,
-    notification: {
-      title: string;
-      body: string;
-      data?: Record<string, string>;
-    }
-  ): Promise<string> {
+  static async sendNotification(options: NotificationOptions): Promise<Notification | null> {
     try {
-      const message = {
-        token,
-        notification: {
-          title: notification.title,
-          body: notification.body,
-        },
-        data: notification.data || {},
-        android: {
-          priority: 'high',
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-            },
-          },
-        },
+      const {
+        userId,
+        title,
+        message,
+        type,
+        priority = 'normal',
+        data,
+        actionUrl,
+        actionText,
+        sendEmail = true,
+        sendSms = priority === 'urgent',
+        sendPush = true,
+        sendRealtime = true
+      } = options;
+
+      // Get user data for personalization
+      const userDoc = await firestore.collection('users').doc(userId).get();
+      
+      if (!userDoc.exists) {
+        logger.warn(`Cannot send notification: User ${userId} not found`);
+        return null;
+      }
+
+      const userData = userDoc.data();
+      const userEmail = userData?.email;
+      const userName = userData?.displayName || userData?.firstName || 'User';
+      const userPhone = userData?.phoneNumber;
+      const userPreferences = userData?.notificationPreferences || {
+        email: true,
+        sms: true,
+        push: true,
+        realtime: true
       };
 
-      const response = await this.messaging.send(message);
-      logger.info(`Notification sent to device: ${response}`);
-      return response;
-    } catch (error) {
-      logger.error('Error sending notification to device:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send notification to topic
-   */
-  static async sendToTopic(
-    topic: string,
-    notification: {
-      title: string;
-      body: string;
-      data?: Record<string, string>;
-    }
-  ): Promise<string> {
-    try {
-      const message = {
-        topic,
-        notification: {
-          title: notification.title,
-          body: notification.body,
-        },
-        data: notification.data || {},
-        android: {
-          priority: 'high',
-        },
-        apns: {
-          payload: {
-            aps: {
-              sound: 'default',
-            },
-          },
-        },
-      };
-
-      const response = await this.messaging.send(message);
-      logger.info(`Notification sent to topic ${topic}: ${response}`);
-      return response;
-    } catch (error) {
-      logger.error('Error sending notification to topic:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send real-time notification to user
-   */
-  static async sendRealTimeNotification(
-    userId: string,
-    notification: Omit<RealTimeNotification, 'id' | 'timestamp' | 'read'>
-  ): Promise<RealTimeNotification> {
-    try {
-      const realTimeNotification: RealTimeNotification = {
+      // Create notification object
+      const notification: Notification = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        ...notification,
-        timestamp: Date.now(),
+        userId,
+        title,
+        message,
+        type,
+        priority,
+        data,
+        actionUrl,
+        actionText,
         read: false,
+        createdAt: new Date(),
+        channels: {}
       };
 
-      // Save to Firestore
-      await this.db.collection('notifications').doc(realTimeNotification.id).set(realTimeNotification);
+      // Save notification to database
+      await firestore.collection('notifications').doc(notification.id).set(notification);
 
-      // Send via WebSocket
-      await WebSocketService.sendNotification(userId, realTimeNotification);
+      // Send through different channels based on priority and user preferences
+      const channels: Promise<boolean>[] = [];
 
-      // Log the notification
-      await AuditService.logEvent(
-        'system',
-        'system@aihub.com',
-        'REALTIME_NOTIFICATION_SENT',
-        'notification',
-        { userId, notificationId: realTimeNotification.id, type: notification.type },
-        userId
-      );
-
-      logger.info(`Real-time notification sent to user ${userId}: ${notification.title}`);
-
-      return realTimeNotification;
-    } catch (error) {
-      logger.error('Error sending real-time notification:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send notification to multiple users
-   */
-  static async sendToMultipleUsers(
-    userIds: string[],
-    notification: Omit<RealTimeNotification, 'id' | 'timestamp' | 'read'>
-  ): Promise<RealTimeNotification[]> {
-    try {
-      const notifications: RealTimeNotification[] = [];
-
-      // Send to each user
-      for (const userId of userIds) {
-        try {
-          const realTimeNotification = await this.sendRealTimeNotification(userId, notification);
-          notifications.push(realTimeNotification);
-        } catch (error) {
-          logger.error(`Failed to send notification to user ${userId}:`, error);
-        }
+      // Send via email
+      if (sendEmail && userPreferences.email && userEmail) {
+        const emailPromise = emailService.sendNotificationEmail(
+          userEmail,
+          userName,
+          {
+            title,
+            message,
+            actionUrl,
+            actionText
+          }
+        ).then(success => {
+          if (success) {
+            notification.channels.email = {
+              sent: true,
+              sentAt: new Date()
+            };
+          }
+          return success;
+        });
+        
+        channels.push(emailPromise);
       }
 
-      logger.info(`Sent notifications to ${notifications.length}/${userIds.length} users`);
-      return notifications;
+      // Send via SMS for high priority notifications
+      if (sendSms && userPreferences.sms && userPhone && (priority === 'high' || priority === 'urgent')) {
+        const smsPromise = smsService.sendImportantNotification(
+          userPhone,
+          { title, message }
+        ).then(success => {
+          if (success) {
+            notification.channels.sms = {
+              sent: true,
+              sentAt: new Date()
+            };
+          }
+          return success;
+        });
+        
+        channels.push(smsPromise);
+      }
+
+      // Send via WebSocket for real-time updates
+      if (sendRealtime && userPreferences.realtime) {
+        const realtimePromise = Promise.resolve().then(() => {
+          WebSocketService.sendToUser(userId, 'notification', notification);
+          notification.channels.realtime = {
+            sent: true,
+            sentAt: new Date()
+          };
+          return true;
+        });
+        
+        channels.push(realtimePromise);
+      }
+
+      // Wait for all channels to complete
+      await Promise.all(channels);
+
+      // Update notification with channel statuses
+      await firestore.collection('notifications').doc(notification.id).update({
+        channels: notification.channels
+      });
+
+      logger.info(`Notification sent to user ${userId}: ${title}`);
+      return notification;
     } catch (error) {
-      logger.error('Error sending notifications to multiple users:', error);
-      throw error;
+      logger.error('Error sending notification:', error);
+      return null;
     }
   }
 
   /**
-   * Get user notifications
+   * Send session reminder notifications
    */
-  static async getUserNotifications(
+  static async sendSessionReminder(
+    sessionId: string,
     userId: string,
-    limit: number = 50,
-    offset: number = 0,
-    unreadOnly: boolean = false
-  ): Promise<RealTimeNotification[]> {
+    mentorId: string,
+    sessionDetails: {
+      title: string;
+      date: string;
+      time: string;
+      joinUrl: string;
+    }
+  ): Promise<void> {
     try {
-      let query = this.db
-        .collection('notifications')
-        .where('userId', '==', userId)
-        .orderBy('timestamp', 'desc')
-        .limit(limit)
-        .offset(offset);
+      // Get user data
+      const [userDoc, mentorDoc] = await Promise.all([
+        firestore.collection('users').doc(userId).get(),
+        firestore.collection('users').doc(mentorId).get()
+      ]);
 
-      if (unreadOnly) {
-        query = query.where('read', '==', false);
+      if (!userDoc.exists || !mentorDoc.exists) {
+        logger.warn(`Cannot send session reminder: User or mentor not found`);
+        return;
       }
 
-      const snapshot = await query.get();
+      const userData = userDoc.data();
+      const mentorData = mentorDoc.data();
 
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as RealTimeNotification[];
+      // Send reminder to user
+      await this.sendNotification({
+        userId,
+        title: 'Your Session Starts Soon',
+        message: `Your session "${sessionDetails.title}" with ${mentorData?.displayName || 'your mentor'} starts at ${sessionDetails.time}`,
+        type: 'info',
+        priority: 'high',
+        actionUrl: sessionDetails.joinUrl,
+        actionText: 'Join Session',
+        data: {
+          sessionId,
+          type: 'session_reminder'
+        }
+      });
+
+      // Send reminder to mentor
+      await this.sendNotification({
+        userId: mentorId,
+        title: 'Your Session Starts Soon',
+        message: `Your session "${sessionDetails.title}" with ${userData?.displayName || 'your student'} starts at ${sessionDetails.time}`,
+        type: 'info',
+        priority: 'high',
+        actionUrl: sessionDetails.joinUrl,
+        actionText: 'Join Session',
+        data: {
+          sessionId,
+          type: 'session_reminder'
+        }
+      });
+
+      // Send email reminders
+      if (userData?.email) {
+        await emailService.sendSessionReminder(
+          userData.email,
+          userData.displayName || userData.firstName || 'User',
+          {
+            id: sessionId,
+            title: sessionDetails.title,
+            date: sessionDetails.date,
+            time: sessionDetails.time,
+            mentorName: mentorData?.displayName || 'Your Mentor',
+            joinUrl: sessionDetails.joinUrl
+          }
+        );
+      }
+
+      if (mentorData?.email) {
+        await emailService.sendSessionReminder(
+          mentorData.email,
+          mentorData.displayName || mentorData.firstName || 'Mentor',
+          {
+            id: sessionId,
+            title: sessionDetails.title,
+            date: sessionDetails.date,
+            time: sessionDetails.time,
+            mentorName: userData?.displayName || 'Your Student',
+            joinUrl: sessionDetails.joinUrl
+          }
+        );
+      }
+
+      // Send SMS reminders for users with phone numbers
+      if (userData?.phoneNumber) {
+        await smsService.sendSessionReminder(
+          userData.phoneNumber,
+          {
+            title: sessionDetails.title,
+            time: sessionDetails.time,
+            joinUrl: sessionDetails.joinUrl
+          }
+        );
+      }
+
+      if (mentorData?.phoneNumber) {
+        await smsService.sendSessionReminder(
+          mentorData.phoneNumber,
+          {
+            title: sessionDetails.title,
+            time: sessionDetails.time,
+            joinUrl: sessionDetails.joinUrl
+          }
+        );
+      }
+
+      logger.info(`Session reminders sent for session ${sessionId}`);
     } catch (error) {
-      logger.error('Error getting user notifications:', error);
-      throw error;
+      logger.error('Error sending session reminders:', error);
+    }
+  }
+
+  /**
+   * Send security alert notification
+   */
+  static async sendSecurityAlert(
+    userId: string,
+    alertDetails: {
+      type: string;
+      location?: string;
+      device?: string;
+      time?: string;
+    }
+  ): Promise<void> {
+    try {
+      // Get user data
+      const userDoc = await firestore.collection('users').doc(userId).get();
+      
+      if (!userDoc.exists) {
+        logger.warn(`Cannot send security alert: User ${userId} not found`);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const userEmail = userData?.email;
+      const userName = userData?.displayName || userData?.firstName || 'User';
+      const userPhone = userData?.phoneNumber;
+
+      // Create alert message
+      const { type, location, device, time } = alertDetails;
+      const timeStr = time || new Date().toLocaleTimeString();
+      
+      let message = `Security Alert: ${type} detected`;
+      
+      if (location) {
+        message += ` from ${location}`;
+      }
+      
+      if (device) {
+        message += ` on ${device}`;
+      }
+      
+      message += ` at ${timeStr}. If this wasn't you, please secure your account immediately.`;
+
+      // Send high-priority notification
+      await this.sendNotification({
+        userId,
+        title: 'Security Alert',
+        message,
+        type: 'error',
+        priority: 'urgent',
+        actionUrl: `${config.APP_URL}/account/security`,
+        actionText: 'Secure Account',
+        data: {
+          type: 'security_alert',
+          alertDetails
+        }
+      });
+
+      // Always send security alerts via SMS if phone number is available
+      if (userPhone) {
+        await smsService.sendSecurityAlert(userPhone, alertDetails);
+      }
+
+      // Log security alert
+      logger.warn(`Security alert for user ${userId}: ${type}`);
+    } catch (error) {
+      logger.error('Error sending security alert:', error);
     }
   }
 
   /**
    * Mark notification as read
    */
-  static async markAsRead(notificationId: string, userId: string): Promise<void> {
+  static async markAsRead(notificationId: string, userId: string): Promise<boolean> {
     try {
-      await this.db.collection('notifications').doc(notificationId).update({
+      const notificationDoc = await firestore.collection('notifications').doc(notificationId).get();
+      
+      if (!notificationDoc.exists) {
+        return false;
+      }
+
+      const notification = notificationDoc.data() as Notification;
+      
+      // Verify the notification belongs to the user
+      if (notification.userId !== userId) {
+        return false;
+      }
+
+      // Update notification
+      await firestore.collection('notifications').doc(notificationId).update({
         read: true,
-        readAt: Date.now(),
+        readAt: new Date()
       });
 
-      logger.info(`Notification ${notificationId} marked as read by user ${userId}`);
+      return true;
     } catch (error) {
       logger.error('Error marking notification as read:', error);
-      throw error;
+      return false;
     }
   }
 
   /**
-   * Mark all notifications as read for user
+   * Get user notifications with pagination
    */
-  static async markAllAsRead(userId: string): Promise<void> {
+  static async getUserNotifications(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0,
+    unreadOnly: boolean = false
+  ): Promise<{ notifications: Notification[]; total: number }> {
     try {
-      const batch = this.db.batch();
-      const notificationsSnapshot = await this.db
-        .collection('notifications')
-        .where('userId', '==', userId)
-        .where('read', '==', false)
+      let query = firestore.collection('notifications')
+        .where('userId', '==', userId);
+      
+      if (unreadOnly) {
+        query = query.where('read', '==', false);
+      }
+      
+      // Get total count
+      const countSnapshot = await query.count().get();
+      const total = countSnapshot.data().count;
+
+      // Get paginated results
+      const snapshot = await query
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .offset(offset)
         .get();
 
-      notificationsSnapshot.docs.forEach(doc => {
-        batch.update(doc.ref, {
-          read: true,
-          readAt: Date.now(),
-        });
-      });
+      const notifications = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      })) as Notification[];
 
-      await batch.commit();
-
-      logger.info(`All notifications marked as read for user ${userId}`);
+      return { notifications, total };
     } catch (error) {
-      logger.error('Error marking all notifications as read:', error);
-      throw error;
+      logger.error('Error getting user notifications:', error);
+      return { notifications: [], total: 0 };
     }
   }
 
   /**
    * Delete notification
    */
-  static async deleteNotification(notificationId: string, userId: string): Promise<void> {
+  static async deleteNotification(notificationId: string, userId: string): Promise<boolean> {
     try {
-      await this.db.collection('notifications').doc(notificationId).delete();
+      const notificationDoc = await firestore.collection('notifications').doc(notificationId).get();
+      
+      if (!notificationDoc.exists) {
+        return false;
+      }
 
-      logger.info(`Notification ${notificationId} deleted by user ${userId}`);
+      const notification = notificationDoc.data() as Notification;
+      
+      // Verify the notification belongs to the user
+      if (notification.userId !== userId) {
+        return false;
+      }
+
+      // Delete notification
+      await firestore.collection('notifications').doc(notificationId).delete();
+
+      return true;
     } catch (error) {
       logger.error('Error deleting notification:', error);
-      throw error;
+      return false;
     }
   }
 
   /**
-   * Get notification statistics
+   * Send welcome notification and email
    */
-  static async getNotificationStats(userId: string): Promise<{
-    total: number;
-    unread: number;
-    byType: Record<string, number>;
-  }> {
+  static async sendWelcomeNotification(userId: string, email: string, name: string): Promise<void> {
     try {
-      const notificationsSnapshot = await this.db
-        .collection('notifications')
-        .where('userId', '==', userId)
-        .get();
-
-      const notifications = notificationsSnapshot.docs.map(doc => doc.data() as RealTimeNotification);
-
-      const stats = {
-        total: notifications.length,
-        unread: notifications.filter(n => !n.read).length,
-        byType: {} as Record<string, number>,
-      };
-
-      notifications.forEach(notification => {
-        stats.byType[notification.type] = (stats.byType[notification.type] || 0) + 1;
+      // Send welcome notification
+      await this.sendNotification({
+        userId,
+        title: `Welcome to ${config.APP_NAME}!`,
+        message: `Thank you for joining ${config.APP_NAME}. We're excited to have you on board!`,
+        type: 'success',
+        priority: 'normal',
+        actionUrl: `${config.APP_URL}/getting-started`,
+        actionText: 'Get Started',
+        data: {
+          type: 'welcome'
+        }
       });
 
-      return stats;
-    } catch (error) {
-      logger.error('Error getting notification stats:', error);
-      throw error;
-    }
-  }
+      // Send welcome email
+      await emailService.sendWelcomeEmail(email, name);
 
-  /**
-   * Subscribe user to topic
-   */
-  static async subscribeToTopic(tokens: string[], topic: string): Promise<void> {
-    try {
-      const response = await this.messaging.subscribeToTopic(tokens, topic);
-      logger.info(`Subscribed ${response.successCount}/${tokens.length} tokens to topic ${topic}`);
+      logger.info(`Welcome notification and email sent to user ${userId}`);
     } catch (error) {
-      logger.error('Error subscribing to topic:', error);
-      throw error;
+      logger.error('Error sending welcome notification:', error);
     }
   }
+}
 
-  /**
-   * Unsubscribe user from topic
-   */
-  static async unsubscribeFromTopic(tokens: string[], topic: string): Promise<void> {
-    try {
-      const response = await this.messaging.unsubscribeFromTopic(tokens, topic);
-      logger.info(`Unsubscribed ${response.successCount}/${tokens.length} tokens from topic ${topic}`);
-    } catch (error) {
-      logger.error('Error unsubscribing from topic:', error);
-      throw error;
-    }
-  }
-} 
+export default NotificationService;

@@ -205,8 +205,6 @@ export const codeSplitting = {
         return import('expo-notifications');
       case 'location':
         return import('expo-location');
-      case 'payments':
-        return import('@stripe/stripe-react-native');
       default:
         throw new Error(`Unknown feature: ${featureName}`);
     }

@@ -3,7 +3,7 @@ import { RBACService } from '../services/rbacService';
 import { AuditService } from '../services/auditService';
 import { BulkService } from '../services/bulkService';
 import { SchedulerService } from '../services/schedulerService';
-import { UserRole, Permission } from '../types/rbac';
+import { UserRole } from '../types/rbac';
 import logger from '../services/loggerService';
 
 // Get all available roles
@@ -204,7 +204,7 @@ export const bulkUserOperations = async (req: Request, res: Response) => {
 };
 
 // Get system statistics
-export const getSystemStats = async (req: Request, res: Response) => {
+export const getSystemStats = async (_req: Request, res: Response) => {
   try {
     const stats = await BulkService.getSystemStats();
 
@@ -223,7 +223,7 @@ export const getSystemStats = async (req: Request, res: Response) => {
 };
 
 // Get scheduled job status
-export const getJobStatus = async (req: Request, res: Response) => {
+export const getJobStatus = async (_req: Request, res: Response) => {
   try {
     const jobStatus = SchedulerService.getJobStatus();
 

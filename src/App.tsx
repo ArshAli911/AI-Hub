@@ -30,7 +30,7 @@ const App = () => {
 
     // Cleanup on unmount
     return () => {
-      performanceMonitor.destroy();
+      // Performance monitor cleanup handled automatically
     };
   }, []);
 

@@ -12,53 +12,8 @@ import { Mentor, Post, Product } from '../../types';
 import usePaginatedData from '../../hooks/usePaginatedData';
 
 // Define your navigation parameter lists
-type AuthStackParamList = {
-  [AppRoutes.Splash]: undefined;
-  [AppRoutes.Auth]: undefined; // Or { screen: 'Login' }; if Auth is a placeholder
-  Register: undefined;
-};
-
-type HomeStackParamList = {
-  [AppRoutes.Home]: undefined;
-};
-
-type MentorsStackParamList = {
-  [AppRoutes.Mentors]: undefined;
-  MentorProfile: { mentorId: string };
-};
-
-type CommunityStackParamList = {
-  [AppRoutes.Community]: undefined;
-  ThreadView: { postId: string };
-  CreatePost: undefined;
-};
-
-type MarketplaceStackParamList = {
-  [AppRoutes.Marketplace]: undefined;
-  ProductDetails: { productId: string };
-  UploadProduct: undefined;
-};
-
-type PrototypeStackParamList = {
-  [AppRoutes.Prototype]: undefined;
-  FeedbackScreen: { prototypeId: string };
-  UploadPrototype: undefined; // Add this if you navigate directly here
-};
-
-type ProfileStackParamList = {
-  [AppRoutes.Profile]: undefined;
-  EditProfile: undefined;
-};
-
-// Define the Root Tab Navigator's param list to include nested screen navigation
-export type RootTabParamList = {
-  [AppRoutes.Home]: undefined;
-  [AppRoutes.Mentors]: NavigatorScreenParams<MentorsStackParamList>;
-  [AppRoutes.Community]: NavigatorScreenParams<CommunityStackParamList>;
-  [AppRoutes.Marketplace]: NavigatorScreenParams<MarketplaceStackParamList>;
-  [AppRoutes.Prototype]: NavigatorScreenParams<PrototypeStackParamList>;
-  [AppRoutes.Profile]: NavigatorScreenParams<ProfileStackParamList>;
-};
+// Import the types from navigation instead of redefining them
+import { RootTabParamList, MentorsStackParamList, CommunityStackParamList, PrototypeStackParamList } from '../../navigation/AppNavigator';
 
 // Define the navigation prop for HomeScreen
 type HomeScreenNavigationProp = NavigationProp<
@@ -68,16 +23,24 @@ type HomeScreenNavigationProp = NavigationProp<
 
 const mockMentors: Mentor[] = [
   {
+    _id: '101',
     id: '101',
+    firstName: 'Dr. Anya',
+    lastName: 'Sharma',
     name: 'Dr. Anya Sharma',
     title: 'AI Ethics & Governance',
+    specialty: 'AI Ethics',
     bio: 'Specializing in responsible AI development and policy.',
     imageUrl: 'https://via.placeholder.com/100/FF5733/FFFFFF?text=AS',
   },
   {
+    _id: '102',
     id: '102',
+    firstName: 'Mark',
+    lastName: 'Jansen',
     name: 'Mark Jansen',
     title: 'Machine Learning Engineer',
+    specialty: 'Machine Learning',
     bio: 'Expert in natural language processing and computer vision.',
     imageUrl: 'https://via.placeholder.com/100/33FF57/FFFFFF?text=MJ',
   },
@@ -198,12 +161,12 @@ const HomeScreen: React.FC = () => {
         <View style={styles.quickAccessContainer}>
           <AppButton
             title="Post Idea"
-            onPress={() => navigation.navigate(AppRoutes.Community, { screen: 'CreatePost' })}
+            onPress={() => navigation.navigate('Community', { screen: 'CreatePost' })}
             color={Colors.primary}
           />
           <AppButton
             title="Upload Prototype"
-            onPress={() => navigation.navigate(AppRoutes.Prototype, { screen: 'UploadPrototype' })}
+            onPress={() => navigation.navigate('Prototype', { screen: 'UploadPrototype' })}
             color={Colors.accent}
           />
         </View>

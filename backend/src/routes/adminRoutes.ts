@@ -12,6 +12,7 @@ import {
 } from '../controllers/adminController';
 import { verifyIdToken, requirePermission } from '../middleware/authMiddleware';
 import { Permission } from '../types/rbac';
+import fileAdminRoutes from './fileAdminRoutes';
 
 const router = Router();
 
@@ -36,5 +37,8 @@ router.post('/system/jobs/:jobName/trigger', requirePermission([Permission.MANAG
 
 // Data Export
 router.post('/export/users', requirePermission([Permission.MANAGE_USERS]), exportUserData);
+
+// File Management Admin Routes
+router.use('/files', fileAdminRoutes);
 
 export default router; 

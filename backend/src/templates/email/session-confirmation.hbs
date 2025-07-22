@@ -1,0 +1,38 @@
+{{#> layout subject="Session Confirmation"}}
+<h2>Your Session is Confirmed!</h2>
+
+<p>Hello {{name}},</p>
+
+<p>Your session has been successfully scheduled. Here are the details:</p>
+
+<div class="info-box">
+  <p><strong>Session:</strong> {{sessionDetails.title}}</p>
+  <p><strong>Date:</strong> {{sessionDetails.date}}</p>
+  <p><strong>Time:</strong> {{sessionDetails.time}}</p>
+  <p><strong>Duration:</strong> {{sessionDetails.duration}}</p>
+  <p><strong>Mentor:</strong> {{sessionDetails.mentorName}}</p>
+</div>
+
+<p>You can view the full session details and join when it's time by clicking the button below:</p>
+
+<div style="text-align: center;">
+  <a href="{{sessionUrl}}" class="button">View Session Details</a>
+</div>
+
+<p>Add this session to your calendar to make sure you don't miss it:</p>
+
+<div style="text-align: center;">
+  <a href="{{calendarLink}}" style="display: inline-block; margin: 10px; text-decoration: none; color: #4a6cf7;">
+    <div style="border: 1px solid #ddd; padding: 10px; border-radius: 4px;">
+      <div style="font-weight: bold;">Add to Calendar</div>
+    </div>
+  </a>
+</div>
+
+<p>We recommend joining the session a few minutes early to ensure your audio and video are working properly.</p>
+
+<p>If you need to reschedule or cancel this session, please do so at least 24 hours in advance.</p>
+
+<p>Best regards,<br>
+The {{appName}} Team</p>
+{{/layout}}

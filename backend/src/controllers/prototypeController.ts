@@ -1,755 +1,929 @@
 import { Request, Response } from 'express';
-import { userModel, User, UserRole, UserPermission } from '../models/User';
-import { prototypeModel, Prototype, PrototypeFile } from '../models/Prototype'; // Import PrototypeFile
-import logger from '../services/loggerService';
+import { firestore, storage } from '../config/firebaseAdmin';
+import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import { uploadFileToFirebase } from '../services/fileUploadService';
+import logger from '../services/loggerService';
 
 // Configure Multer for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware to handle prototype file uploads
 export const prototypeUploadMiddleware = upload.fields([
-  { name: 'screenshots', maxCount: 10 },
-  { name: 'videos', maxCount: 5 },
-  { name: 'files', maxCount: 20 },
+  { name: 'thumbnail', maxCount: 1 },
+  { name: 'files', maxCount: 10 },
+  { name: 'images', maxCount: 20 },
 ]);
 
-export const getPrototypes = (req: Request, res: Response) => {
-  // Logic to fetch all prototypes from a service/database
-  res.json({ message: 'Get all prototypes (controller placeholder)' });
-};
-
-export const getPrototypeById = async (req: Request, res: Response) => {
+/**
+ * Get all prototypes
+ */
+export const getPrototypes = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const requestingUser = req.user;
-
-    const prototype = await prototypeModel.getPrototypeById(id);
-    if (!prototype) {
-      return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found'
-      });
+    const { userId, status, limit = 20, offset = 0 } = req.query;
+    
+    let query = firestore.collection('prototypes');
+    
+    // Apply filters
+    if (userId) {
+      query = query.where('userId', '==', userId);
     }
-
-    // Check visibility permissions
-    if (prototype.visibility === 'private' && 
-        prototype.creatorId !== requestingUser?.uid && 
-        requestingUser?.role !== UserRole.ADMIN) {
-      return res.status(403).json({
-        error: 'ForbiddenError',
-        message: 'Access denied to private prototype'
-      });
+    
+    if (status) {
+      query = query.where('status', '==', status);
     }
-
-    // Increment view count
-    await prototypeModel.incrementViews(id);
-
+    
+    // Apply pagination
+    query = query.orderBy('createdAt', 'desc')
+      .limit(Number(limit))
+      .offset(Number(offset));
+    
+    const snapshot = await query.get();
+    
+    const prototypes = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
     res.json({
-      message: 'Prototype retrieved successfully',
-      prototype: {
-        id: prototype.id,
-        creator: {
-          uid: prototype.creator.uid,
-          firstName: prototype.creator.firstName,
-          lastName: prototype.creator.lastName,
-          displayName: prototype.creator.displayName,
-          photoURL: prototype.creator.photoURL
-        },
-        name: prototype.name,
-        description: prototype.description,
-        category: prototype.category,
-        tags: prototype.tags,
-        status: prototype.status,
-        visibility: prototype.visibility,
-        version: prototype.version,
-        thumbnailUrl: prototype.thumbnailUrl,
-        demoUrl: prototype.demoUrl,
-        sourceCodeUrl: prototype.sourceCodeUrl,
-        documentationUrl: prototype.documentationUrl,
-        technologies: prototype.technologies,
-        difficulty: prototype.difficulty,
-        estimatedTime: prototype.estimatedTime,
-        requirements: prototype.requirements,
-        features: prototype.features,
-        screenshots: prototype.screenshots,
-        videos: prototype.videos,
-        files: prototype.files,
-        stats: prototype.stats,
-        metadata: prototype.metadata,
-        createdAt: prototype.createdAt,
-        updatedAt: prototype.updatedAt,
-        publishedAt: prototype.publishedAt
+      success: true,
+      data: prototypes,
+      pagination: {
+        limit: Number(limit),
+        offset: Number(offset),
+        total: prototypes.length
       }
     });
   } catch (error) {
-    logger.error('Error fetching prototype:', error);
+    logger.error('Error getting prototypes:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fetch prototype'
+      success: false,
+      error: 'Failed to get prototypes',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
+/**
+ * Get prototype by ID
+ */
+export const getPrototypeById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const doc = await firestore.collection('prototypes').doc(id).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
+      });
+    }
+    
+    const prototype = {
+      id: doc.id,
+      ...doc.data()
+    };
+    
+    res.json({
+      success: true,
+      data: prototype
+    });
+  } catch (error) {
+    logger.error('Error getting prototype:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
+
+/**
+ * Create a new prototype
+ */
 export const createPrototype = async (req: Request, res: Response) => {
   try {
     const {
-      name,
+      userId,
+      title,
       description,
       category,
       tags,
-      technologies,
-      difficulty,
-      estimatedTime,
-      requirements,
-      features,
-      demoUrl,
-      sourceCodeUrl,
-      documentationUrl
+      status = 'draft',
+      visibility = 'private',
+      version = '1.0.0',
+      allowComments = true,
+      allowDuplication = false
     } = req.body;
-
-    // Access files from req.files (after multer middleware)
-    const uploadedScreenshots = (req.files as { [fieldname: string]: Express.Multer.File[] })?.screenshots || [];
-    const uploadedVideos = (req.files as { [fieldname: string]: Express.Multer.File[] })?.videos || [];
-    const uploadedFiles = (req.files as { [fieldname: string]: Express.Multer.File[] })?.files || [];
-
-    const requestingUser = req.user;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
-      });
-    }
-
+    
     // Validate required fields
-    if (!name || !description || !category || !technologies || !difficulty) {
+    if (!userId || !title) {
       return res.status(400).json({
-        error: 'ValidationError',
-        message: 'Missing required fields: name, description, category, technologies, difficulty'
+        success: false,
+        error: 'Missing required fields',
+        message: 'userId and title are required'
       });
     }
-
-    // Get user data
-    const user = await userModel.getUserById(requestingUser.uid);
-    if (!user) {
-      return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'User not found'
-      });
+    
+    // Access files from req.files (after multer middleware)
+    const uploadedThumbnail = (req.files as { [fieldname: string]: Express.Multer.File[] })?.thumbnail?.[0];
+    const uploadedFiles = (req.files as { [fieldname: string]: Express.Multer.File[] })?.files || [];
+    const uploadedImages = (req.files as { [fieldname: string]: Express.Multer.File[] })?.images || [];
+    
+    // Upload thumbnail if provided
+    let thumbnailUrl = null;
+    if (uploadedThumbnail) {
+      thumbnailUrl = await uploadFileToFirebase(
+        uploadedThumbnail.buffer,
+        uploadedThumbnail.mimetype!,
+        'prototypes/thumbnails'
+      );
     }
-
-    // Helper to determine file type based on mimetype
-    const getFileType = (mimetype: string): PrototypeFile['type'] => {
-      if (mimetype.startsWith('image/')) return 'image';
-      if (mimetype.startsWith('video/')) return 'video';
-      if (mimetype.includes('document') || mimetype.includes('pdf')) return 'document';
-      if (mimetype.includes('code') || mimetype.includes('json') || mimetype.includes('xml')) return 'code';
-      return 'other';
-    };
-
-    // Upload files to Firebase Storage and map to PrototypeFile interface
-    const processFiles = async (files: Express.Multer.File[], folder: string): Promise<PrototypeFile[]> => {
-      return Promise.all(files.map(async (file) => {
-        const fileUrl = await uploadFileToFirebase(file.buffer, file.mimetype!, `prototypes/${folder}`);
-        return {
-          id: Math.random().toString(36).substring(2, 15), // Simple unique ID
-          name: file.originalname,
-          type: getFileType(file.mimetype!),
-          url: fileUrl,
-          size: file.size,
-          mimeType: file.mimetype!,
-          uploadedAt: new Date(),
-        };
-      }));
-    };
-
-    const screenshotFiles = await processFiles(uploadedScreenshots, 'screenshots');
-    const videoFiles = await processFiles(uploadedVideos, 'videos');
-    const otherFiles = await processFiles(uploadedFiles, 'files');
-
+    
+    // Upload files
+    const files = await Promise.all(uploadedFiles.map(async (file) => {
+      const fileUrl = await uploadFileToFirebase(
+        file.buffer,
+        file.mimetype!,
+        'prototypes/files'
+      );
+      
+      return {
+        id: uuidv4(),
+        name: file.originalname,
+        url: fileUrl,
+        type: file.mimetype,
+        size: file.size,
+        uploadedAt: new Date()
+      };
+    }));
+    
+    // Upload images
+    const images = await Promise.all(uploadedImages.map(async (image) => {
+      const imageUrl = await uploadFileToFirebase(
+        image.buffer,
+        image.mimetype!,
+        'prototypes/images'
+      );
+      
+      return {
+        id: uuidv4(),
+        name: image.originalname,
+        url: imageUrl,
+        type: image.mimetype,
+        size: image.size,
+        uploadedAt: new Date()
+      };
+    }));
+    
+    // Create prototype document
     const prototypeData = {
-      creatorId: requestingUser.uid,
-      creator: user,
-      name,
-      description,
-      category,
+      userId,
+      title,
+      description: description || '',
+      category: category || 'other',
       tags: tags || [],
-      technologies,
-      difficulty,
-      estimatedTime: estimatedTime || 0,
-      requirements: requirements || [],
-      features: features || [],
-      screenshots: screenshotFiles.map(f => f.url), // Store only URLs for screenshots/videos directly on Prototype
-      videos: videoFiles.map(f => f.url),
-      files: otherFiles, // Store full PrototypeFile objects for generic files
-      demoUrl,
-      sourceCodeUrl,
-      documentationUrl,
-      status: 'draft' as const,
-      visibility: 'private' as const,
-      version: '1.0.0'
+      status,
+      visibility,
+      version,
+      allowComments,
+      allowDuplication,
+      thumbnailUrl,
+      files,
+      images,
+      stats: {
+        views: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        downloads: 0
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
-
-    const prototype = await prototypeModel.createPrototype(prototypeData);
-
-    logger.info(`Prototype created: ${prototype.id} by ${requestingUser.uid}`);
-
+    
+    const docRef = await firestore.collection('prototypes').add(prototypeData);
+    
     res.status(201).json({
+      success: true,
       message: 'Prototype created successfully',
-      prototype: {
-        id: prototype.id,
-        name: prototype.name,
-        description: prototype.description,
-        category: prototype.category,
-        tags: prototype.tags,
-        technologies: prototype.technologies,
-        difficulty: prototype.difficulty,
-        status: prototype.status,
-        visibility: prototype.visibility,
-        createdAt: prototype.createdAt,
-        screenshots: prototype.screenshots,
-        videos: prototype.videos,
-        files: prototype.files,
+      data: {
+        id: docRef.id,
+        ...prototypeData
       }
     });
   } catch (error) {
     logger.error('Error creating prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to create prototype'
+      success: false,
+      error: 'Failed to create prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const submitFeedback = (req: Request, res: Response) => {
-  const { id } = req.params;
-  // Logic to submit feedback for a prototype via a service/database
-  res.json({ message: `Submit feedback for prototype ${id} (controller placeholder)`, data: req.body });
-};
-
-export const getPrototypesByCreator = async (req: Request, res: Response) => {
-  try {
-    const { creatorId } = req.params;
-    const { status } = req.query;
-    const requestingUser = req.user;
-
-    // Check if user is requesting their own prototypes or has admin permissions
-    if (requestingUser?.uid !== creatorId && requestingUser?.role !== UserRole.ADMIN) {
-      return res.status(403).json({
-        error: 'ForbiddenError',
-        message: 'Insufficient permissions to view these prototypes'
-      });
-    }
-
-    const prototypes = await prototypeModel.getPrototypesByCreator(creatorId, status as string);
-
-    res.json({
-      message: 'Prototypes retrieved successfully',
-      prototypes: prototypes.map(prototype => ({
-        id: prototype.id,
-        name: prototype.name,
-        description: prototype.description,
-        category: prototype.category,
-        tags: prototype.tags,
-        status: prototype.status,
-        visibility: prototype.visibility,
-        technologies: prototype.technologies,
-        difficulty: prototype.difficulty,
-        stats: prototype.stats,
-        createdAt: prototype.createdAt,
-        updatedAt: prototype.updatedAt
-      })),
-      count: prototypes.length
-    });
-  } catch (error) {
-    logger.error('Error fetching prototypes by creator:', error);
-    res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fetch prototypes by creator'
-    });
-  }
-};
-
-export const getPublicPrototypes = async (req: Request, res: Response) => {
-  try {
-    const { limit = 20, offset = 0, category } = req.query;
-
-    const prototypes = await prototypeModel.getPublicPrototypes(
-      Number(limit),
-      Number(offset),
-      category as string
-    );
-
-    res.json({
-      message: 'Public prototypes retrieved successfully',
-      prototypes: prototypes.map(prototype => ({
-        id: prototype.id,
-        creator: {
-          uid: prototype.creator.uid,
-          firstName: prototype.creator.firstName,
-          lastName: prototype.creator.lastName,
-          displayName: prototype.creator.displayName,
-          photoURL: prototype.creator.photoURL
-        },
-        name: prototype.name,
-        description: prototype.description,
-        category: prototype.category,
-        tags: prototype.tags,
-        technologies: prototype.technologies,
-        difficulty: prototype.difficulty,
-        thumbnailUrl: prototype.thumbnailUrl,
-        stats: prototype.stats,
-        createdAt: prototype.createdAt
-      })),
-      count: prototypes.length,
-      limit: Number(limit),
-      offset: Number(offset)
-    });
-  } catch (error) {
-    logger.error('Error fetching public prototypes:', error);
-    res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fetch public prototypes'
-    });
-  }
-};
-
-export const searchPrototypes = async (req: Request, res: Response) => {
-  try {
-    const { query, limit = 20 } = req.query;
-
-    if (!query || typeof query !== 'string') {
-      return res.status(400).json({
-        error: 'ValidationError',
-        message: 'Search query is required'
-      });
-    }
-
-    const prototypes = await prototypeModel.searchPrototypes(query, Number(limit));
-
-    res.json({
-      message: 'Prototype search completed',
-      prototypes: prototypes.map(prototype => ({
-        id: prototype.id,
-        creator: {
-          uid: prototype.creator.uid,
-          firstName: prototype.creator.firstName,
-          lastName: prototype.creator.lastName,
-          displayName: prototype.creator.displayName,
-          photoURL: prototype.creator.photoURL
-        },
-        name: prototype.name,
-        description: prototype.description,
-        category: prototype.category,
-        tags: prototype.tags,
-        technologies: prototype.technologies,
-        difficulty: prototype.difficulty,
-        thumbnailUrl: prototype.thumbnailUrl,
-        stats: prototype.stats,
-        createdAt: prototype.createdAt
-      })),
-      count: prototypes.length,
-      query
-    });
-  } catch (error) {
-    logger.error('Error searching prototypes:', error);
-    res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to search prototypes'
-    });
-  }
-};
-
+/**
+ * Update a prototype
+ */
 export const updatePrototype = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const requestingUser = req.user;
-    const updates = req.body;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
-      });
-    }
-
-    const prototype = await prototypeModel.getPrototypeById(id);
-    if (!prototype) {
+    const {
+      title,
+      description,
+      category,
+      tags,
+      status,
+      visibility,
+      version,
+      allowComments,
+      allowDuplication
+    } = req.body;
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
-
-    // Check if user is the creator or has admin permissions
-    if (prototype.creatorId !== requestingUser.uid && requestingUser.role !== UserRole.ADMIN) {
+    
+    const prototype = doc.data()!;
+    
+    // Check if user is the owner
+    if (prototype.userId !== req.user?.uid) {
       return res.status(403).json({
-        error: 'ForbiddenError',
-        message: 'Insufficient permissions to update this prototype'
+        success: false,
+        error: 'Permission denied',
+        message: 'You do not have permission to update this prototype'
       });
     }
-
-    const updatedPrototype = await prototypeModel.updatePrototype(id, updates);
-
-    logger.info(`Prototype updated: ${id} by ${requestingUser.uid}`);
-
+    
+    // Access files from req.files (after multer middleware)
+    const uploadedThumbnail = (req.files as { [fieldname: string]: Express.Multer.File[] })?.thumbnail?.[0];
+    const uploadedFiles = (req.files as { [fieldname: string]: Express.Multer.File[] })?.files || [];
+    const uploadedImages = (req.files as { [fieldname: string]: Express.Multer.File[] })?.images || [];
+    
+    // Upload thumbnail if provided
+    let thumbnailUrl = prototype.thumbnailUrl;
+    if (uploadedThumbnail) {
+      thumbnailUrl = await uploadFileToFirebase(
+        uploadedThumbnail.buffer,
+        uploadedThumbnail.mimetype!,
+        'prototypes/thumbnails'
+      );
+    }
+    
+    // Upload new files
+    const newFiles = await Promise.all(uploadedFiles.map(async (file) => {
+      const fileUrl = await uploadFileToFirebase(
+        file.buffer,
+        file.mimetype!,
+        'prototypes/files'
+      );
+      
+      return {
+        id: uuidv4(),
+        name: file.originalname,
+        url: fileUrl,
+        type: file.mimetype,
+        size: file.size,
+        uploadedAt: new Date()
+      };
+    }));
+    
+    // Upload new images
+    const newImages = await Promise.all(uploadedImages.map(async (image) => {
+      const imageUrl = await uploadFileToFirebase(
+        image.buffer,
+        image.mimetype!,
+        'prototypes/images'
+      );
+      
+      return {
+        id: uuidv4(),
+        name: image.originalname,
+        url: imageUrl,
+        type: image.mimetype,
+        size: image.size,
+        uploadedAt: new Date()
+      };
+    }));
+    
+    // Prepare update data
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+    
+    // Only update fields that are provided
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) updateData.category = category;
+    if (tags !== undefined) updateData.tags = tags;
+    if (status !== undefined) updateData.status = status;
+    if (visibility !== undefined) updateData.visibility = visibility;
+    if (version !== undefined) updateData.version = version;
+    if (allowComments !== undefined) updateData.allowComments = allowComments;
+    if (allowDuplication !== undefined) updateData.allowDuplication = allowDuplication;
+    if (thumbnailUrl !== prototype.thumbnailUrl) updateData.thumbnailUrl = thumbnailUrl;
+    
+    // Add new files and images if provided
+    if (newFiles.length > 0) {
+      updateData.files = [...(prototype.files || []), ...newFiles];
+    }
+    
+    if (newImages.length > 0) {
+      updateData.images = [...(prototype.images || []), ...newImages];
+    }
+    
+    // Update prototype
+    await prototypeRef.update(updateData);
+    
+    // Get updated prototype
+    const updatedDoc = await prototypeRef.get();
+    const updatedPrototype = {
+      id: updatedDoc.id,
+      ...updatedDoc.data()
+    };
+    
     res.json({
+      success: true,
       message: 'Prototype updated successfully',
-      prototype: {
-        id: updatedPrototype.id,
-        name: updatedPrototype.name,
-        description: updatedPrototype.description,
-        category: updatedPrototype.category,
-        tags: updatedPrototype.tags,
-        status: updatedPrototype.status,
-        visibility: updatedPrototype.visibility,
-        technologies: updatedPrototype.technologies,
-        difficulty: updatedPrototype.difficulty,
-        updatedAt: updatedPrototype.updatedAt
-      }
+      data: updatedPrototype
     });
   } catch (error) {
     logger.error('Error updating prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to update prototype'
+      success: false,
+      error: 'Failed to update prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
+/**
+ * Delete a prototype
+ */
 export const deletePrototype = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const requestingUser = req.user;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
-      });
-    }
-
-    const prototype = await prototypeModel.getPrototypeById(id);
-    if (!prototype) {
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
-
-    // Check if user is the creator or has admin permissions
-    if (prototype.creatorId !== requestingUser.uid && requestingUser.role !== UserRole.ADMIN) {
+    
+    const prototype = doc.data()!;
+    
+    // Check if user is the owner
+    if (prototype.userId !== req.user?.uid) {
       return res.status(403).json({
-        error: 'ForbiddenError',
-        message: 'Insufficient permissions to delete this prototype'
+        success: false,
+        error: 'Permission denied',
+        message: 'You do not have permission to delete this prototype'
       });
     }
-
-    await prototypeModel.deletePrototype(id);
-
-    logger.info(`Prototype deleted: ${id} by ${requestingUser.uid}`);
-
+    
+    // Delete files from storage
+    const bucket = storage.bucket();
+    
+    // Delete thumbnail
+    if (prototype.thumbnailUrl) {
+      try {
+        const thumbnailPath = new URL(prototype.thumbnailUrl).pathname.split('/').pop();
+        await bucket.file(`prototypes/thumbnails/${thumbnailPath}`).delete();
+      } catch (error) {
+        logger.warn('Error deleting thumbnail:', error);
+      }
+    }
+    
+    // Delete files
+    if (prototype.files && prototype.files.length > 0) {
+      for (const file of prototype.files) {
+        try {
+          const filePath = new URL(file.url).pathname.split('/').pop();
+          await bucket.file(`prototypes/files/${filePath}`).delete();
+        } catch (error) {
+          logger.warn(`Error deleting file ${file.name}:`, error);
+        }
+      }
+    }
+    
+    // Delete images
+    if (prototype.images && prototype.images.length > 0) {
+      for (const image of prototype.images) {
+        try {
+          const imagePath = new URL(image.url).pathname.split('/').pop();
+          await bucket.file(`prototypes/images/${imagePath}`).delete();
+        } catch (error) {
+          logger.warn(`Error deleting image ${image.name}:`, error);
+        }
+      }
+    }
+    
+    // Delete prototype document
+    await prototypeRef.delete();
+    
     res.json({
+      success: true,
       message: 'Prototype deleted successfully'
     });
   } catch (error) {
     logger.error('Error deleting prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to delete prototype'
+      success: false,
+      error: 'Failed to delete prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
+/**
+ * Add feedback to a prototype
+ */
 export const addFeedback = async (req: Request, res: Response) => {
   try {
-    const { prototypeId } = req.params;
-    const { rating, comment, categories } = req.body;
-    const requestingUser = req.user;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
-      });
-    }
-
-    // Validate rating
-    if (rating < 1 || rating > 5) {
+    const { id } = req.params;
+    const { userId, content, rating, type = 'comment' } = req.body;
+    
+    // Validate required fields
+    if (!userId || !content) {
       return res.status(400).json({
-        error: 'ValidationError',
-        message: 'Rating must be between 1 and 5'
+        success: false,
+        error: 'Missing required fields',
+        message: 'userId and content are required'
       });
     }
-
-    // Check if prototype exists and is public
-    const prototype = await prototypeModel.getPrototypeById(prototypeId);
-    if (!prototype || prototype.visibility !== 'public') {
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found or not accessible'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
-
-    // Get user data
-    const user = await userModel.getUserById(requestingUser.uid);
-    if (!user) {
-      return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'User not found'
+    
+    const prototype = doc.data()!;
+    
+    // Check if comments are allowed
+    if (!prototype.allowComments) {
+      return res.status(403).json({
+        success: false,
+        error: 'Comments disabled',
+        message: 'Comments are disabled for this prototype'
       });
     }
-
+    
+    // Create feedback document
     const feedbackData = {
-      prototypeId,
-      userId: requestingUser.uid,
-      rating,
-      comment,
-      categories: {
-        functionality: categories?.functionality || rating,
-        design: categories?.design || rating,
-        performance: categories?.performance || rating,
-        documentation: categories?.documentation || rating,
-        originality: categories?.originality || rating
-      },
-      isVerified: false,
-      isHelpful: 0,
-      user
+      prototypeId: id,
+      userId,
+      content,
+      rating: rating || null,
+      type,
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
-
-    const feedback = await prototypeModel.addFeedback(feedbackData);
-
-    logger.info(`Feedback added: ${feedback.id} for prototype ${prototypeId}`);
-
+    
+    const feedbackRef = await firestore.collection('prototypeFeedback').add(feedbackData);
+    
+    // Update prototype stats
+    await prototypeRef.update({
+      'stats.comments': firestore.FieldValue.increment(1),
+      updatedAt: new Date()
+    });
+    
+    // Get user data
+    const userDoc = await firestore.collection('users').doc(userId).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+    
     res.status(201).json({
+      success: true,
       message: 'Feedback added successfully',
-      feedback: {
-        id: feedback.id,
-        prototypeId: feedback.prototypeId,
-        userId: feedback.userId,
-        rating: feedback.rating,
-        comment: feedback.comment,
-        categories: feedback.categories,
-        isVerified: feedback.isVerified,
-        isHelpful: feedback.isHelpful,
-        createdAt: feedback.createdAt
+      data: {
+        id: feedbackRef.id,
+        ...feedbackData,
+        user: userData ? {
+          id: userId,
+          displayName: userData.displayName,
+          photoURL: userData.photoURL
+        } : null
       }
     });
   } catch (error) {
     logger.error('Error adding feedback:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to add feedback'
+      success: false,
+      error: 'Failed to add feedback',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const getPrototypeFeedback = async (req: Request, res: Response) => {
+/**
+ * Get feedback for a prototype
+ */
+export const getFeedback = async (req: Request, res: Response) => {
   try {
-    const { prototypeId } = req.params;
-    const { limit = 20 } = req.query;
-
-    const feedback = await prototypeModel.getPrototypeFeedback(prototypeId, Number(limit));
-
-    res.json({
-      message: 'Prototype feedback retrieved successfully',
-      feedback: feedback.map(f => ({
-        id: f.id,
-        userId: f.userId,
-        user: {
-          uid: f.user.uid,
-          firstName: f.user.firstName,
-          lastName: f.user.lastName,
-          displayName: f.user.displayName,
-          photoURL: f.user.photoURL
-        },
-        rating: f.rating,
-        comment: f.comment,
-        categories: f.categories,
-        isVerified: f.isVerified,
-        isHelpful: f.isHelpful,
-        createdAt: f.createdAt
-      })),
-      count: feedback.length
-    });
-  } catch (error) {
-    logger.error('Error fetching prototype feedback:', error);
-    res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fetch prototype feedback'
-    });
-  }
-};
-
-export const addComment = async (req: Request, res: Response) => {
-  try {
-    const { prototypeId } = req.params;
-    const { content, parentId } = req.body;
-    const requestingUser = req.user;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
+    const { id } = req.params;
+    const { limit = 20, offset = 0, type } = req.query;
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
+    
+    // Build query
+    let query = firestore.collection('prototypeFeedback')
+      .where('prototypeId', '==', id);
+    
+    if (type) {
+      query = query.where('type', '==', type);
+    }
+    
+    // Apply pagination
+    query = query.orderBy('createdAt', 'desc')
+      .limit(Number(limit))
+      .offset(Number(offset));
+    
+    const snapshot = await query.get();
+    
+    // Get feedback with user data
+    const feedbackPromises = snapshot.docs.map(async (feedbackDoc) => {
+      const feedback = feedbackDoc.data();
+      
+      // Get user data
+      const userDoc = await firestore.collection('users').doc(feedback.userId).get();
+      const userData = userDoc.exists ? userDoc.data() : null;
+      
+      return {
+        id: feedbackDoc.id,
+        ...feedback,
+        user: userData ? {
+          id: feedback.userId,
+          displayName: userData.displayName,
+          photoURL: userData.photoURL
+        } : null
+      };
+    });
+    
+    const feedback = await Promise.all(feedbackPromises);
+    
+    res.json({
+      success: true,
+      data: feedback,
+      pagination: {
+        limit: Number(limit),
+        offset: Number(offset),
+        total: feedback.length
+      }
+    });
+  } catch (error) {
+    logger.error('Error getting feedback:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get feedback',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
 
-    if (!content || content.trim().length === 0) {
+/**
+ * Like a prototype
+ */
+export const likePrototype = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    // Validate required fields
+    if (!userId) {
       return res.status(400).json({
-        error: 'ValidationError',
-        message: 'Comment content is required'
+        success: false,
+        error: 'Missing required fields',
+        message: 'userId is required'
       });
     }
-
-    // Check if prototype exists and is accessible
-    const prototype = await prototypeModel.getPrototypeById(prototypeId);
-    if (!prototype) {
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
-
-    // Get user data
-    const user = await userModel.getUserById(requestingUser.uid);
-    if (!user) {
-      return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'User not found'
+    
+    // Check if user already liked the prototype
+    const likeRef = firestore.collection('prototypeLikes')
+      .where('prototypeId', '==', id)
+      .where('userId', '==', userId);
+    
+    const likeSnapshot = await likeRef.get();
+    
+    if (!likeSnapshot.empty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Already liked',
+        message: 'User has already liked this prototype'
       });
     }
-
-    const commentData = {
-      prototypeId,
-      userId: requestingUser.uid,
-      content: content.trim(),
-      parentId,
-      likes: 0,
-      isEdited: false,
-      user
+    
+    // Create like document
+    const likeData = {
+      prototypeId: id,
+      userId,
+      createdAt: new Date()
     };
-
-    const comment = await prototypeModel.addComment(commentData);
-
-    logger.info(`Comment added: ${comment.id} for prototype ${prototypeId}`);
-
+    
+    await firestore.collection('prototypeLikes').add(likeData);
+    
+    // Update prototype stats
+    await prototypeRef.update({
+      'stats.likes': firestore.FieldValue.increment(1),
+      updatedAt: new Date()
+    });
+    
     res.status(201).json({
-      message: 'Comment added successfully',
-      comment: {
-        id: comment.id,
-        prototypeId: comment.prototypeId,
-        userId: comment.userId,
-        user: {
-          uid: comment.user.uid,
-          firstName: comment.user.firstName,
-          lastName: comment.user.lastName,
-          displayName: comment.user.displayName,
-          photoURL: comment.user.photoURL
-        },
-        content: comment.content,
-        parentId: comment.parentId,
-        likes: comment.likes,
-        isEdited: comment.isEdited,
-        createdAt: comment.createdAt
-      }
+      success: true,
+      message: 'Prototype liked successfully'
     });
   } catch (error) {
-    logger.error('Error adding comment:', error);
+    logger.error('Error liking prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to add comment'
+      success: false,
+      error: 'Failed to like prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const getPrototypeComments = async (req: Request, res: Response) => {
+/**
+ * Unlike a prototype
+ */
+export const unlikePrototype = async (req: Request, res: Response) => {
   try {
-    const { prototypeId } = req.params;
-    const { limit = 50 } = req.query;
-
-    const comments = await prototypeModel.getPrototypeComments(prototypeId, Number(limit));
-
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'userId is required'
+      });
+    }
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
+      });
+    }
+    
+    // Find like document
+    const likeQuery = firestore.collection('prototypeLikes')
+      .where('prototypeId', '==', id)
+      .where('userId', '==', userId);
+    
+    const likeSnapshot = await likeQuery.get();
+    
+    if (likeSnapshot.empty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Not liked',
+        message: 'User has not liked this prototype'
+      });
+    }
+    
+    // Delete like document
+    const batch = firestore.batch();
+    likeSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    
+    // Update prototype stats
+    await prototypeRef.update({
+      'stats.likes': firestore.FieldValue.increment(-1),
+      updatedAt: new Date()
+    });
+    
     res.json({
-      message: 'Prototype comments retrieved successfully',
-      comments: comments.map(comment => ({
-        id: comment.id,
-        userId: comment.userId,
-        user: {
-          uid: comment.user.uid,
-          firstName: comment.user.firstName,
-          lastName: comment.user.lastName,
-          displayName: comment.user.displayName,
-          photoURL: comment.user.photoURL
-        },
-        content: comment.content,
-        parentId: comment.parentId,
-        likes: comment.likes,
-        isEdited: comment.isEdited,
-        createdAt: comment.createdAt
-      })),
-      count: comments.length
+      success: true,
+      message: 'Prototype unliked successfully'
     });
   } catch (error) {
-    logger.error('Error fetching prototype comments:', error);
+    logger.error('Error unliking prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fetch prototype comments'
+      success: false,
+      error: 'Failed to unlike prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 };
 
-export const forkPrototype = async (req: Request, res: Response) => {
+/**
+ * Increment prototype view count
+ */
+export const viewPrototype = async (req: Request, res: Response) => {
   try {
-    const { prototypeId } = req.params;
-    const { reason } = req.body;
-    const requestingUser = req.user;
-
-    if (!requestingUser) {
-      return res.status(401).json({
-        error: 'UnauthorizedError',
-        message: 'Authentication required'
-      });
-    }
-
-    // Check if prototype exists and is public
-    const originalPrototype = await prototypeModel.getPrototypeById(prototypeId);
-    if (!originalPrototype || originalPrototype.visibility !== 'public') {
+    const { id } = req.params;
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'Prototype not found or not accessible'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
+    
+    // Update prototype stats
+    await prototypeRef.update({
+      'stats.views': firestore.FieldValue.increment(1)
+    });
+    
+    res.json({
+      success: true,
+      message: 'View count incremented'
+    });
+  } catch (error) {
+    logger.error('Error incrementing view count:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to increment view count',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
 
-    // Get user data
-    const user = await userModel.getUserById(requestingUser.uid);
-    if (!user) {
+/**
+ * Share a prototype
+ */
+export const sharePrototype = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { platform } = req.body;
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
       return res.status(404).json({
-        error: 'NotFoundError',
-        message: 'User not found'
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
       });
     }
+    
+    // Update prototype stats
+    await prototypeRef.update({
+      'stats.shares': firestore.FieldValue.increment(1)
+    });
+    
+    // Log share event
+    await firestore.collection('prototypeShares').add({
+      prototypeId: id,
+      platform: platform || 'unknown',
+      createdAt: new Date()
+    });
+    
+    res.json({
+      success: true,
+      message: 'Share count incremented'
+    });
+  } catch (error) {
+    logger.error('Error incrementing share count:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to increment share count',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+};
 
-    const fork = await prototypeModel.forkPrototype(prototypeId, requestingUser.uid, user, reason);
-
-    logger.info(`Prototype forked: ${prototypeId} -> ${fork.forkedPrototypeId} by ${requestingUser.uid}`);
-
+/**
+ * Duplicate a prototype
+ */
+export const duplicatePrototype = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { userId, title } = req.body;
+    
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields',
+        message: 'userId is required'
+      });
+    }
+    
+    // Check if prototype exists
+    const prototypeRef = firestore.collection('prototypes').doc(id);
+    const doc = await prototypeRef.get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Prototype not found',
+        message: `No prototype found with ID: ${id}`
+      });
+    }
+    
+    const prototype = doc.data()!;
+    
+    // Check if duplication is allowed
+    if (!prototype.allowDuplication) {
+      return res.status(403).json({
+        success: false,
+        error: 'Duplication not allowed',
+        message: 'This prototype does not allow duplication'
+      });
+    }
+    
+    // Create new prototype document
+    const newPrototypeData = {
+      userId,
+      title: title || `Copy of ${prototype.title}`,
+      description: prototype.description,
+      category: prototype.category,
+      tags: prototype.tags,
+      status: 'draft',
+      visibility: 'private',
+      version: '1.0.0',
+      allowComments: prototype.allowComments,
+      allowDuplication: prototype.allowDuplication,
+      thumbnailUrl: prototype.thumbnailUrl,
+      files: prototype.files,
+      images: prototype.images,
+      originalPrototypeId: id,
+      stats: {
+        views: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        downloads: 0
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const newDocRef = await firestore.collection('prototypes').add(newPrototypeData);
+    
     res.status(201).json({
-      message: 'Prototype forked successfully',
-      fork: {
-        id: fork.id,
-        originalPrototypeId: fork.originalPrototypeId,
-        forkedPrototypeId: fork.forkedPrototypeId,
-        reason: fork.reason,
-        createdAt: fork.createdAt
+      success: true,
+      message: 'Prototype duplicated successfully',
+      data: {
+        id: newDocRef.id,
+        ...newPrototypeData
       }
     });
   } catch (error) {
-    logger.error('Error forking prototype:', error);
+    logger.error('Error duplicating prototype:', error);
     res.status(500).json({
-      error: 'InternalServerError',
-      message: 'Failed to fork prototype'
+      success: false,
+      error: 'Failed to duplicate prototype',
+      message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-}; 
+};

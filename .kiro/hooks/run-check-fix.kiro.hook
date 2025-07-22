@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "Run App & Fix Issues",
+  "description": "Automatically runs the React Native application, monitors for runtime issues, compilation errors, and other problems, then provides fixes for any issues found",
+  "version": "1",
+  "when": {
+    "type": "userTriggered",
+    "patterns": [
+      "src/**/*.tsx",
+      "src/**/*.ts",
+      "package.json",
+      "app.json",
+      "tsconfig.json",
+      "babel.config.js",
+      "metro.config.js"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The application files have been modified. Please:\n\n1. Start the React Native development server using `npm start` or `expo start`\n2. Monitor the console output for any compilation errors, warnings, or runtime issues\n3. Check for TypeScript errors using `npm run type-check`\n4. Run linting to catch code quality issues with `npm run lint`\n5. If any issues are found, analyze them and provide specific fixes including:\n   - Code corrections for compilation errors\n   - Import/export fixes\n   - Type definition corrections\n   - Configuration adjustments\n   - Dependency issues resolution\n6. Test the fixes by running the app again\n7. Provide a summary of what was fixed and current app status\n\nFocus on getting the app running smoothly and addressing any blocking issues that prevent proper execution."
+  }
+}

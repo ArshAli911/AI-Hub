@@ -1,0 +1,26 @@
+{{#> layout subject="Verify Your Email Address"}}
+<h2>Verify Your Email Address</h2>
+
+<p>Hello,</p>
+
+<p>Thank you for registering with {{appName}}! To complete your registration and access all features, please verify your email address.</p>
+
+<div style="text-align: center;">
+  <a href="{{verificationUrl}}" class="button">Verify Email Address</a>
+</div>
+
+<p>This verification link will expire in {{expiryHours}} hours.</p>
+
+<div class="info-box">
+  <p><strong>Why verify your email?</strong></p>
+  <p>Email verification helps us ensure that you have access to this email address and protects your account security.</p>
+</div>
+
+<p>If the button above doesn't work, you can copy and paste the following link into your browser:</p>
+<p style="word-break: break-all;"><a href="{{verificationUrl}}">{{verificationUrl}}</a></p>
+
+<p>If you didn't create an account with {{appName}}, please ignore this email.</p>
+
+<p>Best regards,<br>
+The {{appName}} Team</p>
+{{/layout}}

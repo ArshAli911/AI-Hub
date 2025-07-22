@@ -64,6 +64,18 @@ export const config = {
   ENABLE_HELMET: process.env.ENABLE_HELMET !== 'false',
   ENABLE_EMAIL: process.env.ENABLE_EMAIL !== 'false',
   ENABLE_SMS: process.env.ENABLE_SMS !== 'false',
+  
+  // Background jobs configuration
+  ENABLE_BACKGROUND_JOBS: process.env.ENABLE_BACKGROUND_JOBS !== 'false',
+  ENABLE_EMAIL_QUEUE: process.env.ENABLE_EMAIL_QUEUE !== 'false',
+  ENABLE_FILE_PROCESSING_QUEUE: process.env.ENABLE_FILE_PROCESSING_QUEUE !== 'false',
+  ENABLE_EXPORT_QUEUE: process.env.ENABLE_EXPORT_QUEUE !== 'false',
+  ENABLE_SCHEDULED_JOBS: process.env.ENABLE_SCHEDULED_JOBS !== 'false',
+  
+  // Queue configuration
+  QUEUE_CONCURRENCY: parseInt(process.env.QUEUE_CONCURRENCY || '5', 10),
+  QUEUE_POLL_INTERVAL: parseInt(process.env.QUEUE_POLL_INTERVAL || '5000', 10), // 5 seconds
+  QUEUE_VISIBILITY_TIMEOUT: parseInt(process.env.QUEUE_VISIBILITY_TIMEOUT || '300000', 10), // 5 minutes
 };
 
 // Validation function to ensure required environment variables are set

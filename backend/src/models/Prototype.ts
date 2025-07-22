@@ -1,173 +1,161 @@
-import { getFirestore } from 'firebase-admin/firestore';
-import { User } from './User';
-
-export interface Prototype {
-  id: string;
-  creatorId: string;
-  creator: User;
-  name: string;
-  description: string;
-  category: string;
-  tags: string[];
-  status: 'draft' | 'published' | 'archived' | 'featured';
-  visibility: 'public' | 'private' | 'unlisted';
-  version: string;
-  thumbnailUrl?: string;
-  demoUrl?: string;
-  sourceCodeUrl?: string;
-  documentationUrl?: string;
-  technologies: string[];
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  estimatedTime: number; // minutes
-  requirements: string[];
-  features: string[];
-  screenshots: string[];
-  videos: string[];
-  files: PrototypeFile[];
-  stats: PrototypeStats;
-  metadata: PrototypeMetadata;
-  createdAt: Date;
-  updatedAt: Date;
-  publishedAt?: Date;
-}
+import { firestore } from '../config/firebaseAdmin';
+import logger from '../services/loggerService';
 
 export interface PrototypeFile {
   id: string;
   name: string;
-  type: 'image' | 'video' | 'document' | 'code' | 'other';
   url: string;
-  size: number; // bytes
-  mimeType: string;
+  type: string;
+  size: number;
   uploadedAt: Date;
-}
-
-export interface PrototypeStats {
-  views: number;
-  likes: number;
-  downloads: number;
-  shares: number;
-  comments: number;
-  averageRating: number;
-  totalRatings: number;
-  forks: number;
-  collaborators: number;
-}
-
-export interface PrototypeMetadata {
-  lastModified: Date;
-  fileSize: number; // total size in bytes
-  language: string;
-  framework?: string;
-  dependencies: string[];
-  license: string;
-  readme?: string;
 }
 
 export interface PrototypeFeedback {
   id: string;
   prototypeId: string;
   userId: string;
-  user: User;
-  rating: number; // 1-5
-  comment: string;
-  categories: {
-    functionality: number;
-    design: number;
-    performance: number;
-    documentation: number;
-    originality: number;
-  };
-  isVerified: boolean;
-  isHelpful: number; // count of helpful votes
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface PrototypeComment {
-  id: string;
-  prototypeId: string;
-  userId: string;
-  user: User;
   content: string;
-  parentId?: string; // for replies
-  likes: number;
-  isEdited: boolean;
+  rating?: number; // 1-5 stars
+  type: 'comment' | 'suggestion' | 'bug_report' | 'feature_request';
+  status?: 'pending' | 'acknowledged' | 'resolved';
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface PrototypeCollaborator {
+export interface PrototypeVersion {
   id: string;
-  prototypeId: string;
-  userId: string;
-  user: User;
-  role: 'owner' | 'admin' | 'editor' | 'viewer';
-  permissions: string[];
-  joinedAt: Date;
-  invitedBy: string;
-}
-
-export interface PrototypeFork {
-  id: string;
-  originalPrototypeId: string;
-  forkedPrototypeId: string;
-  userId: string;
-  user: User;
-  reason?: string;
+  version: string;
+  description: string;
+  files: PrototypeFile[];
+  changelog?: string;
   createdAt: Date;
 }
 
-class PrototypeModel {
-  private db = getFirestore();
-  private collection = this.db.collection('prototypes');
-  private feedbackCollection = this.db.collection('prototype_feedback');
-  private commentsCollection = this.db.collection('prototype_comments');
-  private collaboratorsCollection = this.db.collection('prototype_collaborators');
-  private forksCollection = this.db.collection('prototype_forks');
+export interface Prototype {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: 'web_app' | 'mobile_app' | 'ai_model' | 'api' | 'tool' | 'game' | 'other';
+  subcategory?: string;
+  tags: string[];
+  status: 'draft' | 'published' | 'archived' | 'under_review';
+  visibility: 'public' | 'private' | 'unlisted';
+  version: string;
+  versions: PrototypeVersion[];
+  currentVersionId: string;
+  thumbnailUrl?: string;
+  files: PrototypeFile[];
+  images: PrototypeFile[];
+  demoUrl?: string;
+  repositoryUrl?: string;
+  documentationUrl?: string;
+  techStack: string[];
+  requirements: {
+    system?: string[];
+    software?: string[];
+    hardware?: string[];
+  };
+  features: string[];
+  roadmap?: {
+    id: string;
+    title: string;
+    description: string;
+    status: 'planned' | 'in_progress' | 'completed';
+    priority: 'low' | 'medium' | 'high';
+    estimatedCompletion?: Date;
+  }[];
+  license: 'mit' | 'apache' | 'gpl' | 'proprietary' | 'other';
+  licenseDetails?: string;
+  allowComments: boolean;
+  allowDuplication: boolean;
+  allowCollaboration: boolean;
+  collaborators?: {
+    userId: string;
+    role: 'viewer' | 'contributor' | 'maintainer';
+    permissions: string[];
+    addedAt: Date;
+  }[];
+  stats: {
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    downloads: number;
+    forks: number;
+    stars: number;
+  };
+  metadata: {
+    aiGenerated?: boolean;
+    aiModel?: string;
+    complexity: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+    estimatedTime?: string; // e.g., "2 hours", "1 week"
+    difficulty: number; // 1-10 scale
+  };
+  originalPrototypeId?: string; // If this is a fork/duplicate
+  parentPrototypeId?: string; // If this is a version of another prototype
+  createdAt: Date;
+  updatedAt: Date;
+  publishedAt?: Date;
+  archivedAt?: Date;
+}
+
+export interface PrototypeLike {
+  id: string;
+  prototypeId: string;
+  userId: string;
+  createdAt: Date;
+}
+
+export interface PrototypeShare {
+  id: string;
+  prototypeId: string;
+  userId?: string;
+  platform: string;
+  ipAddress?: string;
+  createdAt: Date;
+}
+
+export interface PrototypeDownload {
+  id: string;
+  prototypeId: string;
+  userId?: string;
+  fileId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: Date;
+}
+
+export class PrototypeModel {
+  private static collection = 'prototypes';
+  private static feedbackCollection = 'prototypeFeedback';
+  private static likesCollection = 'prototypeLikes';
+  private static sharesCollection = 'prototypeShares';
+  private static downloadsCollection = 'prototypeDownloads';
 
   /**
    * Create a new prototype
    */
-  async createPrototype(prototypeData: Omit<Prototype, 'id' | 'creator' | 'createdAt' | 'updatedAt' | 'stats' | 'metadata'> & { creator: User }): Promise<Prototype> {
+  static async createPrototype(prototypeData: Omit<Prototype, 'id' | 'createdAt' | 'updatedAt'>): Promise<Prototype> {
     try {
       const now = new Date();
-      const prototype: Prototype = {
+      const prototypeDoc = {
         ...prototypeData,
-        id: this.db.collection('dummy').doc().id,
-        creator: prototypeData.creator,
         createdAt: now,
-        updatedAt: now,
-        status: 'draft',
-        visibility: 'private',
-        version: '1.0.0',
-        stats: {
-          views: 0,
-          likes: 0,
-          downloads: 0,
-          shares: 0,
-          comments: 0,
-          averageRating: 0,
-          totalRatings: 0,
-          forks: 0,
-          collaborators: 1
-        },
-        metadata: {
-          lastModified: now,
-          fileSize: 0,
-          language: 'en',
-          dependencies: [],
-          license: 'MIT'
-        }
+        updatedAt: now
       };
 
-      await this.collection.doc(prototype.id).set(prototype);
+      const docRef = await firestore.collection(this.collection).add(prototypeDoc);
       
-      // Add creator as owner collaborator
-      await this.addCollaborator(prototype.id, prototypeData.creatorId, 'owner', []);
-      
+      const prototype: Prototype = {
+        id: docRef.id,
+        ...prototypeDoc
+      };
+
+      logger.info(`Prototype created: ${prototype.id}`);
       return prototype;
     } catch (error) {
-      console.error('Error creating prototype:', error);
+      logger.error('Error creating prototype:', error);
       throw new Error('Failed to create prototype');
     }
   }
@@ -175,49 +163,183 @@ class PrototypeModel {
   /**
    * Get prototype by ID
    */
-  async getPrototypeById(id: string): Promise<Prototype | null> {
+  static async getPrototypeById(prototypeId: string): Promise<Prototype | null> {
     try {
-      const doc = await this.collection.doc(id).get();
-      if (!doc.exists) {
+      const prototypeDoc = await firestore.collection(this.collection).doc(prototypeId).get();
+      
+      if (!prototypeDoc.exists) {
         return null;
       }
-      return doc.data() as Prototype;
+
+      return {
+        id: prototypeDoc.id,
+        ...prototypeDoc.data()
+      } as Prototype;
     } catch (error) {
-      console.error('Error fetching prototype:', error);
-      throw new Error('Failed to fetch prototype');
+      logger.error(`Error getting prototype ${prototypeId}:`, error);
+      return null;
     }
   }
 
   /**
-   * Get prototypes by creator
+   * Update prototype
    */
-  async getPrototypesByCreator(creatorId: string, status?: string): Promise<Prototype[]> {
+  static async updatePrototype(prototypeId: string, updates: Partial<Prototype>): Promise<Prototype | null> {
     try {
-      let query = this.collection.where('creatorId', '==', creatorId);
+      const updateData = {
+        ...updates,
+        updatedAt: new Date()
+      };
+
+      await firestore.collection(this.collection).doc(prototypeId).update(updateData);
       
-      if (status) {
-        query = query.where('status', '==', status);
+      return await this.getPrototypeById(prototypeId);
+    } catch (error) {
+      logger.error(`Error updating prototype ${prototypeId}:`, error);
+      throw new Error('Failed to update prototype');
+    }
+  }
+
+  /**
+   * Delete prototype
+   */
+  static async deletePrototype(prototypeId: string): Promise<void> {
+    try {
+      await firestore.collection(this.collection).doc(prototypeId).delete();
+      
+      // Delete related data
+      await this.deletePrototypeRelatedData(prototypeId);
+
+      logger.info(`Prototype deleted: ${prototypeId}`);
+    } catch (error) {
+      logger.error(`Error deleting prototype ${prototypeId}:`, error);
+      throw new Error('Failed to delete prototype');
+    }
+  }
+
+  /**
+   * Get prototypes with pagination and filters
+   */
+  static async getPrototypes(
+    limit: number = 20,
+    offset: number = 0,
+    filters: {
+      userId?: string;
+      category?: string;
+      status?: Prototype['status'];
+      visibility?: Prototype['visibility'];
+      tags?: string[];
+      searchQuery?: string;
+      sortBy?: 'createdAt' | 'updatedAt' | 'views' | 'likes' | 'title';
+      sortOrder?: 'asc' | 'desc';
+    } = {}
+  ): Promise<{ prototypes: Prototype[]; total: number }> {
+    try {
+      let query = firestore.collection(this.collection);
+
+      // Apply filters
+      if (filters.userId) {
+        query = query.where('userId', '==', filters.userId);
       }
 
-      const snapshot = await query.orderBy('createdAt', 'desc').get();
-      return snapshot.docs.map(doc => doc.data() as Prototype);
+      if (filters.category) {
+        query = query.where('category', '==', filters.category);
+      }
+
+      if (filters.status) {
+        query = query.where('status', '==', filters.status);
+      }
+
+      if (filters.visibility) {
+        query = query.where('visibility', '==', filters.visibility);
+      }
+
+      if (filters.tags && filters.tags.length > 0) {
+        query = query.where('tags', 'array-contains-any', filters.tags);
+      }
+
+      // Apply sorting
+      const sortBy = filters.sortBy || 'createdAt';
+      const sortOrder = filters.sortOrder || 'desc';
+      
+      if (sortBy.startsWith('stats.')) {
+        query = query.orderBy(sortBy, sortOrder);
+      } else {
+        query = query.orderBy(sortBy, sortOrder);
+      }
+
+      // Apply pagination
+      const snapshot = await query.limit(limit).offset(offset).get();
+
+      const prototypes = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Prototype[];
+
+      // Get total count
+      const totalSnapshot = await query.count().get();
+      const total = totalSnapshot.data().count;
+
+      // Apply search filter if provided (client-side filtering for simplicity)
+      let filteredPrototypes = prototypes;
+      if (filters.searchQuery) {
+        const searchLower = filters.searchQuery.toLowerCase();
+        filteredPrototypes = prototypes.filter(prototype =>
+          prototype.title.toLowerCase().includes(searchLower) ||
+          prototype.description.toLowerCase().includes(searchLower) ||
+          prototype.tags.some(tag => tag.toLowerCase().includes(searchLower))
+        );
+      }
+
+      return { prototypes: filteredPrototypes, total };
     } catch (error) {
-      console.error('Error fetching prototypes by creator:', error);
-      throw new Error('Failed to fetch prototypes by creator');
+      logger.error('Error getting prototypes:', error);
+      throw new Error('Failed to get prototypes');
     }
   }
 
   /**
-   * Get public prototypes
+   * Add feedback to prototype
    */
-  async getPublicPrototypes(limit: number = 20, offset: number = 0, category?: string): Promise<Prototype[]> {
+  static async addFeedback(feedbackData: Omit<PrototypeFeedback, 'id' | 'createdAt' | 'updatedAt'>): Promise<PrototypeFeedback> {
     try {
-      let query = this.collection
-        .where('status', '==', 'published')
-        .where('visibility', '==', 'public');
+      const now = new Date();
+      const feedback = {
+        ...feedbackData,
+        createdAt: now,
+        updatedAt: now
+      };
 
-      if (category) {
-        query = query.where('category', '==', category);
+      const docRef = await firestore.collection(this.feedbackCollection).add(feedback);
+      
+      // Update prototype stats
+      await this.updatePrototypeStats(feedbackData.prototypeId, { comments: 1 });
+
+      return {
+        id: docRef.id,
+        ...feedback
+      };
+    } catch (error) {
+      logger.error('Error adding feedback:', error);
+      throw new Error('Failed to add feedback');
+    }
+  }
+
+  /**
+   * Get prototype feedback
+   */
+  static async getPrototypeFeedback(
+    prototypeId: string,
+    limit: number = 20,
+    offset: number = 0,
+    type?: PrototypeFeedback['type']
+  ): Promise<PrototypeFeedback[]> {
+    try {
+      let query = firestore.collection(this.feedbackCollection)
+        .where('prototypeId', '==', prototypeId);
+
+      if (type) {
+        query = query.where('type', '==', type);
       }
 
       const snapshot = await query
@@ -226,323 +348,523 @@ class PrototypeModel {
         .offset(offset)
         .get();
 
-      return snapshot.docs.map(doc => doc.data() as Prototype);
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as PrototypeFeedback[];
     } catch (error) {
-      console.error('Error fetching public prototypes:', error);
-      throw new Error('Failed to fetch public prototypes');
+      logger.error(`Error getting feedback for prototype ${prototypeId}:`, error);
+      return [];
     }
   }
 
   /**
-   * Search prototypes
+   * Like prototype
    */
-  async searchPrototypes(query: string, limit: number = 20): Promise<Prototype[]> {
+  static async likePrototype(prototypeId: string, userId: string): Promise<void> {
     try {
-      // Note: Firestore doesn't support full-text search natively
-      // This is a simple search on name and description
-      const snapshot = await this.collection
-        .where('status', '==', 'published')
-        .where('visibility', '==', 'public')
-        .orderBy('name')
-        .startAt(query)
-        .endAt(query + '\uf8ff')
-        .limit(limit)
+      // Check if already liked
+      const existingLike = await firestore
+        .collection(this.likesCollection)
+        .where('prototypeId', '==', prototypeId)
+        .where('userId', '==', userId)
+        .limit(1)
         .get();
 
-      return snapshot.docs.map(doc => doc.data() as Prototype);
-    } catch (error) {
-      console.error('Error searching prototypes:', error);
-      throw new Error('Failed to search prototypes');
-    }
-  }
-
-  /**
-   * Update prototype
-   */
-  async updatePrototype(id: string, updates: Partial<Prototype>): Promise<Prototype> {
-    try {
-      const updateData = {
-        ...updates,
-        updatedAt: new Date(),
-        metadata: {
-          ...updates.metadata,
-          lastModified: new Date()
-        }
-      };
-
-      await this.collection.doc(id).update(updateData);
-      
-      const updatedPrototype = await this.getPrototypeById(id);
-      if (!updatedPrototype) {
-        throw new Error('Prototype not found after update');
+      if (!existingLike.empty) {
+        throw new Error('Prototype already liked by user');
       }
-      
-      return updatedPrototype;
-    } catch (error) {
-      console.error('Error updating prototype:', error);
-      throw new Error('Failed to update prototype');
-    }
-  }
 
-  /**
-   * Delete prototype
-   */
-  async deletePrototype(id: string): Promise<void> {
-    try {
-      await this.collection.doc(id).delete();
-    } catch (error) {
-      console.error('Error deleting prototype:', error);
-      throw new Error('Failed to delete prototype');
-    }
-  }
-
-  /**
-   * Add feedback to prototype
-   */
-  async addFeedback(feedbackData: Omit<PrototypeFeedback, 'id' | 'user' | 'createdAt' | 'updatedAt'> & { user: User }): Promise<PrototypeFeedback> {
-    try {
-      const now = new Date();
-      const feedback: PrototypeFeedback = {
-        ...feedbackData,
-        id: this.db.collection('dummy').doc().id,
-        user: feedbackData.user,
-        createdAt: now,
-        updatedAt: now,
-        isVerified: false,
-        isHelpful: 0
-      };
-
-      await this.feedbackCollection.doc(feedback.id).set(feedback);
-      
-      // Update prototype stats
-      await this.updatePrototypeStats(feedbackData.prototypeId);
-      
-      return feedback;
-    } catch (error) {
-      console.error('Error adding feedback:', error);
-      throw new Error('Failed to add feedback');
-    }
-  }
-
-  /**
-   * Get prototype feedback
-   */
-  async getPrototypeFeedback(prototypeId: string, limit: number = 20): Promise<PrototypeFeedback[]> {
-    try {
-      const snapshot = await this.feedbackCollection
-        .where('prototypeId', '==', prototypeId)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
-
-      return snapshot.docs.map(doc => doc.data() as PrototypeFeedback);
-    } catch (error) {
-      console.error('Error fetching prototype feedback:', error);
-      throw new Error('Failed to fetch prototype feedback');
-    }
-  }
-
-  /**
-   * Add comment to prototype
-   */
-  async addComment(commentData: Omit<PrototypeComment, 'id' | 'user' | 'createdAt' | 'updatedAt'> & { user: User }): Promise<PrototypeComment> {
-    try {
-      const now = new Date();
-      const comment: PrototypeComment = {
-        ...commentData,
-        id: this.db.collection('dummy').doc().id,
-        user: commentData.user,
-        createdAt: now,
-        updatedAt: now,
-        likes: 0,
-        isEdited: false
-      };
-
-      await this.commentsCollection.doc(comment.id).set(comment);
-      
-      // Update prototype stats
-      await this.updatePrototypeStats(commentData.prototypeId);
-      
-      return comment;
-    } catch (error) {
-      console.error('Error adding comment:', error);
-      throw new Error('Failed to add comment');
-    }
-  }
-
-  /**
-   * Get prototype comments
-   */
-  async getPrototypeComments(prototypeId: string, limit: number = 50): Promise<PrototypeComment[]> {
-    try {
-      const snapshot = await this.commentsCollection
-        .where('prototypeId', '==', prototypeId)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
-
-      return snapshot.docs.map(doc => doc.data() as PrototypeComment);
-    } catch (error) {
-      console.error('Error fetching prototype comments:', error);
-      throw new Error('Failed to fetch prototype comments');
-    }
-  }
-
-  /**
-   * Add collaborator to prototype
-   */
-  async addCollaborator(prototypeId: string, userId: string, role: string, permissions: string[]): Promise<PrototypeCollaborator> {
-    try {
-      const now = new Date();
-      const collaborator: PrototypeCollaborator = {
-        id: this.db.collection('dummy').doc().id,
+      // Add like
+      await firestore.collection(this.likesCollection).add({
         prototypeId,
         userId,
-        user: {} as User, // Will be populated when needed
-        role: role as any,
-        permissions,
-        joinedAt: now,
-        invitedBy: userId
-      };
+        createdAt: new Date()
+      });
 
-      await this.collaboratorsCollection.doc(collaborator.id).set(collaborator);
-      return collaborator;
+      // Update prototype stats
+      await this.updatePrototypeStats(prototypeId, { likes: 1 });
     } catch (error) {
-      console.error('Error adding collaborator:', error);
-      throw new Error('Failed to add collaborator');
+      logger.error('Error liking prototype:', error);
+      throw error;
     }
   }
 
   /**
-   * Get prototype collaborators
+   * Unlike prototype
    */
-  async getPrototypeCollaborators(prototypeId: string): Promise<PrototypeCollaborator[]> {
+  static async unlikePrototype(prototypeId: string, userId: string): Promise<void> {
     try {
-      const snapshot = await this.collaboratorsCollection
+      // Find and delete like
+      const likeSnapshot = await firestore
+        .collection(this.likesCollection)
         .where('prototypeId', '==', prototypeId)
+        .where('userId', '==', userId)
+        .limit(1)
         .get();
 
-      return snapshot.docs.map(doc => doc.data() as PrototypeCollaborator);
+      if (likeSnapshot.empty) {
+        throw new Error('Prototype not liked by user');
+      }
+
+      await likeSnapshot.docs[0].ref.delete();
+
+      // Update prototype stats
+      await this.updatePrototypeStats(prototypeId, { likes: -1 });
     } catch (error) {
-      console.error('Error fetching prototype collaborators:', error);
-      throw new Error('Failed to fetch prototype collaborators');
+      logger.error('Error unliking prototype:', error);
+      throw error;
     }
   }
 
   /**
-   * Fork a prototype
+   * Share prototype
    */
-  async forkPrototype(originalPrototypeId: string, userId: string, user: User, reason?: string): Promise<PrototypeFork> {
+  static async sharePrototype(
+    prototypeId: string,
+    platform: string,
+    userId?: string,
+    ipAddress?: string
+  ): Promise<void> {
+    try {
+      await firestore.collection(this.sharesCollection).add({
+        prototypeId,
+        userId,
+        platform,
+        ipAddress,
+        createdAt: new Date()
+      });
+
+      // Update prototype stats
+      await this.updatePrototypeStats(prototypeId, { shares: 1 });
+    } catch (error) {
+      logger.error('Error sharing prototype:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Download prototype
+   */
+  static async downloadPrototype(
+    prototypeId: string,
+    fileId?: string,
+    userId?: string,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<void> {
+    try {
+      await firestore.collection(this.downloadsCollection).add({
+        prototypeId,
+        userId,
+        fileId,
+        ipAddress,
+        userAgent,
+        createdAt: new Date()
+      });
+
+      // Update prototype stats
+      await this.updatePrototypeStats(prototypeId, { downloads: 1 });
+    } catch (error) {
+      logger.error('Error downloading prototype:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Increment view count
+   */
+  static async incrementViewCount(prototypeId: string): Promise<void> {
+    try {
+      await this.updatePrototypeStats(prototypeId, { views: 1 });
+    } catch (error) {
+      logger.error('Error incrementing view count:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fork prototype
+   */
+  static async forkPrototype(
+    originalPrototypeId: string,
+    userId: string,
+    title?: string
+  ): Promise<Prototype> {
     try {
       const originalPrototype = await this.getPrototypeById(originalPrototypeId);
+      
       if (!originalPrototype) {
         throw new Error('Original prototype not found');
       }
 
+      if (!originalPrototype.allowDuplication) {
+        throw new Error('Prototype duplication not allowed');
+      }
+
       // Create forked prototype
-      const forkedPrototypeData = {
+      const forkedPrototype = await this.createPrototype({
         ...originalPrototype,
-        creatorId: userId,
-        creator: user,
-        name: `${originalPrototype.name} (Fork)`,
-        status: 'draft' as const,
-        visibility: 'private' as const,
-        version: '1.0.0',
+        userId,
+        title: title || `Fork of ${originalPrototype.title}`,
+        status: 'draft',
+        visibility: 'private',
+        originalPrototypeId,
         stats: {
           views: 0,
           likes: 0,
-          downloads: 0,
-          shares: 0,
           comments: 0,
-          averageRating: 0,
-          totalRatings: 0,
+          shares: 0,
+          downloads: 0,
           forks: 0,
-          collaborators: 1
+          stars: 0
         }
-      };
+      });
 
-      const forkedPrototype = await this.createPrototype(forkedPrototypeData);
+      // Update original prototype fork count
+      await this.updatePrototypeStats(originalPrototypeId, { forks: 1 });
 
-      // Create fork record
-      const fork: PrototypeFork = {
-        id: this.db.collection('dummy').doc().id,
-        originalPrototypeId,
-        forkedPrototypeId: forkedPrototype.id,
+      return forkedPrototype;
+    } catch (error) {
+      logger.error('Error forking prototype:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add collaborator
+   */
+  static async addCollaborator(
+    prototypeId: string,
+    userId: string,
+    role: 'viewer' | 'contributor' | 'maintainer',
+    permissions: string[]
+  ): Promise<void> {
+    try {
+      const prototype = await this.getPrototypeById(prototypeId);
+      
+      if (!prototype) {
+        throw new Error('Prototype not found');
+      }
+
+      const collaborators = prototype.collaborators || [];
+      
+      // Check if user is already a collaborator
+      const existingCollaborator = collaborators.find(c => c.userId === userId);
+      if (existingCollaborator) {
+        throw new Error('User is already a collaborator');
+      }
+
+      // Add collaborator
+      collaborators.push({
         userId,
-        user,
-        reason,
+        role,
+        permissions,
+        addedAt: new Date()
+      });
+
+      await this.updatePrototype(prototypeId, { collaborators });
+    } catch (error) {
+      logger.error('Error adding collaborator:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove collaborator
+   */
+  static async removeCollaborator(prototypeId: string, userId: string): Promise<void> {
+    try {
+      const prototype = await this.getPrototypeById(prototypeId);
+      
+      if (!prototype) {
+        throw new Error('Prototype not found');
+      }
+
+      const collaborators = (prototype.collaborators || []).filter(c => c.userId !== userId);
+      
+      await this.updatePrototype(prototypeId, { collaborators });
+    } catch (error) {
+      logger.error('Error removing collaborator:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create new version
+   */
+  static async createVersion(
+    prototypeId: string,
+    version: string,
+    description: string,
+    files: PrototypeFile[],
+    changelog?: string
+  ): Promise<void> {
+    try {
+      const prototype = await this.getPrototypeById(prototypeId);
+      
+      if (!prototype) {
+        throw new Error('Prototype not found');
+      }
+
+      const newVersion: PrototypeVersion = {
+        id: firestore.collection('temp').doc().id,
+        version,
+        description,
+        files,
+        changelog,
         createdAt: new Date()
       };
 
-      await this.forksCollection.doc(fork.id).set(fork);
+      const versions = [...prototype.versions, newVersion];
       
-      // Update original prototype stats
-      await this.updatePrototypeStats(originalPrototypeId);
-      
-      return fork;
+      await this.updatePrototype(prototypeId, {
+        version,
+        versions,
+        currentVersionId: newVersion.id,
+        files
+      });
     } catch (error) {
-      console.error('Error forking prototype:', error);
-      throw new Error('Failed to fork prototype');
+      logger.error('Error creating version:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get popular prototypes
+   */
+  static async getPopularPrototypes(
+    limit: number = 10,
+    timeframe: 'day' | 'week' | 'month' | 'all' = 'week'
+  ): Promise<Prototype[]> {
+    try {
+      let query = firestore.collection(this.collection)
+        .where('status', '==', 'published')
+        .where('visibility', '==', 'public');
+
+      // Filter by timeframe if not 'all'
+      if (timeframe !== 'all') {
+        const now = new Date();
+        let startDate: Date;
+        
+        switch (timeframe) {
+          case 'day':
+            startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case 'week':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case 'month':
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            startDate = new Date(0);
+        }
+        
+        query = query.where('publishedAt', '>=', startDate);
+      }
+
+      const snapshot = await query
+        .orderBy('stats.likes', 'desc')
+        .limit(limit)
+        .get();
+
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Prototype[];
+    } catch (error) {
+      logger.error('Error getting popular prototypes:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get trending prototypes
+   */
+  static async getTrendingPrototypes(limit: number = 10): Promise<Prototype[]> {
+    try {
+      // This is a simplified trending algorithm
+      // In production, you might want to use a more sophisticated scoring system
+      const snapshot = await firestore.collection(this.collection)
+        .where('status', '==', 'published')
+        .where('visibility', '==', 'public')
+        .orderBy('stats.views', 'desc')
+        .limit(limit * 2) // Get more to filter by recent activity
+        .get();
+
+      const prototypes = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Prototype[];
+
+      // Sort by a combination of views, likes, and recency
+      const trendingPrototypes = prototypes
+        .map(prototype => {
+          const daysSincePublished = prototype.publishedAt 
+            ? (Date.now() - prototype.publishedAt.getTime()) / (1000 * 60 * 60 * 24)
+            : 999;
+          
+          const trendingScore = 
+            (prototype.stats.views * 0.3) +
+            (prototype.stats.likes * 0.4) +
+            (prototype.stats.comments * 0.2) +
+            (prototype.stats.shares * 0.1) -
+            (daysSincePublished * 0.1); // Penalize older prototypes
+          
+          return { ...prototype, trendingScore };
+        })
+        .sort((a, b) => b.trendingScore - a.trendingScore)
+        .slice(0, limit);
+
+      return trendingPrototypes;
+    } catch (error) {
+      logger.error('Error getting trending prototypes:', error);
+      return [];
     }
   }
 
   /**
    * Update prototype stats
    */
-  async updatePrototypeStats(prototypeId: string): Promise<void> {
+  private static async updatePrototypeStats(
+    prototypeId: string,
+    statUpdates: Partial<Prototype['stats']>
+  ): Promise<void> {
     try {
-      const [feedbackSnapshot, commentsSnapshot, forksSnapshot] = await Promise.all([
-        this.feedbackCollection.where('prototypeId', '==', prototypeId).get(),
-        this.commentsCollection.where('prototypeId', '==', prototypeId).get(),
-        this.forksCollection.where('originalPrototypeId', '==', prototypeId).get()
-      ]);
+      const updates: any = { updatedAt: new Date() };
+      
+      Object.entries(statUpdates).forEach(([key, value]) => {
+        if (typeof value === 'number') {
+          updates[`stats.${key}`] = firestore.FieldValue.increment(value);
+        }
+      });
 
-      const totalRatings = feedbackSnapshot.size;
-      const averageRating = totalRatings > 0 
-        ? feedbackSnapshot.docs.reduce((sum, doc) => sum + (doc.data() as PrototypeFeedback).rating, 0) / totalRatings
-        : 0;
-
-      const stats: PrototypeStats = {
-        views: 0, // This would be tracked separately
-        likes: 0, // This would be tracked separately
-        downloads: 0, // This would be tracked separately
-        shares: 0, // This would be tracked separately
-        comments: commentsSnapshot.size,
-        averageRating,
-        totalRatings,
-        forks: forksSnapshot.size,
-        collaborators: 0 // This would be calculated from collaborators collection
-      };
-
-      await this.updatePrototype(prototypeId, { stats });
+      await firestore.collection(this.collection).doc(prototypeId).update(updates);
     } catch (error) {
-      console.error('Error updating prototype stats:', error);
-      throw new Error('Failed to update prototype stats');
+      logger.error(`Error updating prototype stats ${prototypeId}:`, error);
+      throw error;
     }
   }
 
   /**
-   * Increment prototype view count
+   * Delete prototype related data
    */
-  async incrementViews(prototypeId: string): Promise<void> {
+  private static async deletePrototypeRelatedData(prototypeId: string): Promise<void> {
     try {
-      const prototype = await this.getPrototypeById(prototypeId);
-      if (!prototype) {
-        throw new Error('Prototype not found');
-      }
+      const batch = firestore.batch();
 
-      const updatedStats = {
-        ...prototype.stats,
-        views: prototype.stats.views + 1
-      };
+      // Delete feedback
+      const feedbackSnapshot = await firestore
+        .collection(this.feedbackCollection)
+        .where('prototypeId', '==', prototypeId)
+        .get();
+      
+      feedbackSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
 
-      await this.updatePrototype(prototypeId, { stats: updatedStats });
+      // Delete likes
+      const likesSnapshot = await firestore
+        .collection(this.likesCollection)
+        .where('prototypeId', '==', prototypeId)
+        .get();
+      
+      likesSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+
+      // Delete shares
+      const sharesSnapshot = await firestore
+        .collection(this.sharesCollection)
+        .where('prototypeId', '==', prototypeId)
+        .get();
+      
+      sharesSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+
+      // Delete downloads
+      const downloadsSnapshot = await firestore
+        .collection(this.downloadsCollection)
+        .where('prototypeId', '==', prototypeId)
+        .get();
+      
+      downloadsSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+
+      await batch.commit();
     } catch (error) {
-      console.error('Error incrementing prototype views:', error);
-      throw new Error('Failed to increment prototype views');
+      logger.error(`Error deleting related data for prototype ${prototypeId}:`, error);
+    }
+  }
+
+  /**
+   * Get prototype statistics
+   */
+  static async getPrototypeStatistics(): Promise<{
+    totalPrototypes: number;
+    publishedPrototypes: number;
+    draftPrototypes: number;
+    prototypesByCategory: Record<string, number>;
+    totalViews: number;
+    totalLikes: number;
+    totalDownloads: number;
+  }> {
+    try {
+      // Get total prototypes
+      const totalSnapshot = await firestore.collection(this.collection).count().get();
+      
+      // Get published prototypes
+      const publishedSnapshot = await firestore
+        .collection(this.collection)
+        .where('status', '==', 'published')
+        .count()
+        .get();
+      
+      // Get draft prototypes
+      const draftSnapshot = await firestore
+        .collection(this.collection)
+        .where('status', '==', 'draft')
+        .count()
+        .get();
+
+      // Get all prototypes for aggregation
+      const allPrototypesSnapshot = await firestore.collection(this.collection).get();
+      const prototypes = allPrototypesSnapshot.docs.map(doc => doc.data() as Prototype);
+
+      // Calculate aggregated stats
+      const prototypesByCategory: Record<string, number> = {};
+      let totalViews = 0;
+      let totalLikes = 0;
+      let totalDownloads = 0;
+
+      prototypes.forEach(prototype => {
+        // Count by category
+        prototypesByCategory[prototype.category] = (prototypesByCategory[prototype.category] || 0) + 1;
+        
+        // Sum stats
+        totalViews += prototype.stats.views || 0;
+        totalLikes += prototype.stats.likes || 0;
+        totalDownloads += prototype.stats.downloads || 0;
+      });
+
+      return {
+        totalPrototypes: totalSnapshot.data().count,
+        publishedPrototypes: publishedSnapshot.data().count,
+        draftPrototypes: draftSnapshot.data().count,
+        prototypesByCategory,
+        totalViews,
+        totalLikes,
+        totalDownloads
+      };
+    } catch (error) {
+      logger.error('Error getting prototype statistics:', error);
+      throw new Error('Failed to get prototype statistics');
     }
   }
 }
 
-export const prototypeModel = new PrototypeModel();
-export default prototypeModel; 
+export const prototypeModel = PrototypeModel;
+export default PrototypeModel;

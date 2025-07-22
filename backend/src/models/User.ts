@@ -1,333 +1,645 @@
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+import { firestore } from '../config/firebaseAdmin';
+import { UserRole } from '../services/rbacService';
+import logger from '../services/loggerService';
 
 export interface User {
-  uid: string;
+  id: string;
+  uid: string; // Firebase Auth UID
   email: string;
-  firstName: string;
-  lastName: string;
-  displayName?: string;
+  displayName: string;
   photoURL?: string;
-  bio?: string;
-  role: UserRole;
-  permissions: string[];
-  isEmailVerified: boolean;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  lastLoginAt?: Date;
-  profile?: UserProfile;
-  preferences?: UserPreferences;
-  stats?: UserStats;
-}
-
-export interface UserProfile {
   phoneNumber?: string;
+  bio?: string;
   location?: string;
   website?: string;
   socialLinks?: {
-    linkedin?: string;
     twitter?: string;
+    linkedin?: string;
     github?: string;
+    portfolio?: string;
   };
-  skills?: string[];
-  experience?: number; // years of experience
-  education?: string;
-  company?: string;
-  title?: string;
-}
-
-export interface UserPreferences {
-  notifications: {
-    email: boolean;
-    push: boolean;
-    sms: boolean;
-    sessions: boolean;
-    marketplace: boolean;
-    community: boolean;
+  role: UserRole;
+  permissions: string[];
+  customPermissions?: string[];
+  isEmailVerified: boolean;
+  isPhoneVerified: boolean;
+  isOnline: boolean;
+  lastSeen: Date;
+  presenceStatus?: 'online' | 'away' | 'busy' | 'offline';
+  presenceActivity?: string;
+  preferences: {
+    notifications: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+      inApp: boolean;
+      categories: {
+        messages: boolean;
+        sessions: boolean;
+        marketplace: boolean;
+        prototypes: boolean;
+        system: boolean;
+        marketing: boolean;
+      };
+    };
+    privacy: {
+      profileVisibility: 'public' | 'private' | 'friends';
+      showOnlineStatus: boolean;
+      allowDirectMessages: boolean;
+      allowSessionRequests: boolean;
+    };
+    appearance: {
+      theme: 'light' | 'dark' | 'auto';
+      language: string;
+      timezone: string;
+    };
   };
-  privacy: {
-    profileVisibility: 'public' | 'private' | 'friends';
-    showEmail: boolean;
-    showPhone: boolean;
+  stats: {
+    postsCount: number;
+    commentsCount: number;
+    prototypesCount: number;
+    sessionsCount: number;
+    likesReceived: number;
+    followersCount: number;
+    followingCount: number;
   };
-  theme: 'light' | 'dark' | 'auto';
-  language: string;
+  verification: {
+    isVerified: boolean;
+    verifiedAt?: Date;
+    verificationBadge?: 'mentor' | 'expert' | 'contributor';
+  };
+  subscription?: {
+    plan: 'free' | 'premium' | 'pro';
+    status: 'active' | 'cancelled' | 'expired';
+    expiresAt?: Date;
+    features: string[];
+  };
+  tokenVersion: number;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt?: Date;
 }
 
-export interface UserStats {
-  totalSessions: number;
-  completedSessions: number;
-  totalPrototypes: number;
-  totalProducts: number;
-  totalFeedback: number;
-  averageRating: number;
-  memberSince: Date;
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  photoURL?: string;
+  bio?: string;
+  location?: string;
+  website?: string;
+  socialLinks?: User['socialLinks'];
+  verification: User['verification'];
+  stats: User['stats'];
+  isOnline: boolean;
+  lastSeen: Date;
 }
 
-export enum UserRole {
-  USER = 'user',
-  MENTOR = 'mentor',
-  ADMIN = 'admin',
-  MODERATOR = 'moderator'
+export interface UserActivity {
+  id: string;
+  userId: string;
+  type: 'login' | 'logout' | 'post_created' | 'comment_created' | 'prototype_uploaded' | 'session_joined' | 'product_purchased';
+  description: string;
+  metadata?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+  timestamp: Date;
 }
 
-export enum UserPermission {
-  CREATE_PROTOTYPE = 'create_prototype',
-  EDIT_PROTOTYPE = 'edit_prototype',
-  DELETE_PROTOTYPE = 'delete_prototype',
-  CREATE_PRODUCT = 'create_product',
-  EDIT_PRODUCT = 'edit_product',
-  DELETE_PRODUCT = 'delete_product',
-  BOOK_SESSION = 'book_session',
-  HOST_SESSION = 'host_session',
-  MANAGE_USERS = 'manage_users',
-  MODERATE_CONTENT = 'moderate_content',
-  VIEW_ANALYTICS = 'view_analytics'
-}
-
-class UserModel {
-  private db = getFirestore();
-  private auth = getAuth();
-  private collection = this.db.collection('users');
+export class UserModel {
+  private static collection = 'users';
 
   /**
    * Create a new user
    */
-  async createUser(userData: Omit<User, 'uid' | 'createdAt' | 'updatedAt'> & { uid: string }): Promise<User> {
+  static async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
     try {
       const now = new Date();
-      const user: User = {
+      const userDoc = {
         ...userData,
-        uid: userData.uid,
         createdAt: now,
-        updatedAt: now,
-        isActive: true,
-        isEmailVerified: false,
-        role: userData.role || UserRole.USER,
-        permissions: userData.permissions || [],
-        stats: {
-          totalSessions: 0,
-          completedSessions: 0,
-          totalPrototypes: 0,
-          totalProducts: 0,
-          totalFeedback: 0,
-          averageRating: 0,
-          memberSince: now
-        }
+        updatedAt: now
       };
 
-      await this.collection.doc(user.uid).set(user);
+      const docRef = await firestore.collection(this.collection).add(userDoc);
+      
+      const user: User = {
+        id: docRef.id,
+        ...userDoc
+      };
+
+      logger.info(`User created: ${user.id}`);
       return user;
     } catch (error) {
-      console.error('Error creating user:', error);
+      logger.error('Error creating user:', error);
       throw new Error('Failed to create user');
     }
   }
 
   /**
-   * Get user by UID
+   * Get user by ID
    */
-  async getUserById(uid: string): Promise<User | null> {
+  static async getUserById(userId: string): Promise<User | null> {
     try {
-      const doc = await this.collection.doc(uid).get();
-      if (!doc.exists) {
+      const userDoc = await firestore.collection(this.collection).doc(userId).get();
+      
+      if (!userDoc.exists) {
         return null;
       }
-      return doc.data() as User;
+
+      return {
+        id: userDoc.id,
+        ...userDoc.data()
+      } as User;
     } catch (error) {
-      console.error('Error fetching user:', error);
-      throw new Error('Failed to fetch user');
+      logger.error(`Error getting user ${userId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Get user by UID (Firebase Auth UID)
+   */
+  static async getUserByUID(uid: string): Promise<User | null> {
+    try {
+      const userSnapshot = await firestore
+        .collection(this.collection)
+        .where('uid', '==', uid)
+        .limit(1)
+        .get();
+
+      if (userSnapshot.empty) {
+        return null;
+      }
+
+      const userDoc = userSnapshot.docs[0];
+      return {
+        id: userDoc.id,
+        ...userDoc.data()
+      } as User;
+    } catch (error) {
+      logger.error(`Error getting user by UID ${uid}:`, error);
+      return null;
     }
   }
 
   /**
    * Get user by email
    */
-  async getUserByEmail(email: string): Promise<User | null> {
+  static async getUserByEmail(email: string): Promise<User | null> {
     try {
-      const snapshot = await this.collection.where('email', '==', email).limit(1).get();
-      if (snapshot.empty) {
+      const userSnapshot = await firestore
+        .collection(this.collection)
+        .where('email', '==', email)
+        .limit(1)
+        .get();
+
+      if (userSnapshot.empty) {
         return null;
       }
-      return snapshot.docs[0].data() as User;
+
+      const userDoc = userSnapshot.docs[0];
+      return {
+        id: userDoc.id,
+        ...userDoc.data()
+      } as User;
     } catch (error) {
-      console.error('Error fetching user by email:', error);
-      throw new Error('Failed to fetch user by email');
+      logger.error(`Error getting user by email ${email}:`, error);
+      return null;
     }
   }
 
   /**
    * Update user
    */
-  async updateUser(uid: string, updates: Partial<User>): Promise<User> {
+  static async updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
     try {
       const updateData = {
         ...updates,
         updatedAt: new Date()
       };
 
-      await this.collection.doc(uid).update(updateData);
+      await firestore.collection(this.collection).doc(userId).update(updateData);
       
-      const updatedUser = await this.getUserById(uid);
-      if (!updatedUser) {
-        throw new Error('User not found after update');
-      }
-      
-      return updatedUser;
+      return await this.getUserById(userId);
     } catch (error) {
-      console.error('Error updating user:', error);
+      logger.error(`Error updating user ${userId}:`, error);
       throw new Error('Failed to update user');
     }
   }
 
   /**
-   * Delete user
+   * Delete user (soft delete)
    */
-  async deleteUser(uid: string): Promise<void> {
+  static async deleteUser(userId: string): Promise<void> {
     try {
-      await this.collection.doc(uid).delete();
-      // Note: Firebase Auth user deletion should be handled separately
+      await firestore.collection(this.collection).doc(userId).update({
+        deletedAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      logger.info(`User soft deleted: ${userId}`);
     } catch (error) {
-      console.error('Error deleting user:', error);
+      logger.error(`Error deleting user ${userId}:`, error);
       throw new Error('Failed to delete user');
     }
   }
 
   /**
-   * Update user role and permissions
+   * Get users with pagination
    */
-  async updateUserRole(uid: string, role: UserRole, permissions: string[]): Promise<User> {
+  static async getUsers(
+    limit: number = 20,
+    offset: number = 0,
+    filters: {
+      role?: UserRole;
+      isOnline?: boolean;
+      isVerified?: boolean;
+      searchQuery?: string;
+    } = {}
+  ): Promise<{ users: User[]; total: number }> {
     try {
-      // Update custom claims in Firebase Auth
-      await this.auth.setCustomUserClaims(uid, { role, permissions });
+      let query = firestore.collection(this.collection).where('deletedAt', '==', null);
+
+      // Apply filters
+      if (filters.role) {
+        query = query.where('role', '==', filters.role);
+      }
+
+      if (filters.isOnline !== undefined) {
+        query = query.where('isOnline', '==', filters.isOnline);
+      }
+
+      if (filters.isVerified !== undefined) {
+        query = query.where('verification.isVerified', '==', filters.isVerified);
+      }
+
+      // Apply pagination
+      const snapshot = await query
+        .orderBy('createdAt', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .get();
+
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as User[];
+
+      // Get total count
+      const totalSnapshot = await query.count().get();
+      const total = totalSnapshot.data().count;
+
+      // Apply search filter if provided (client-side filtering for simplicity)
+      let filteredUsers = users;
+      if (filters.searchQuery) {
+        const searchLower = filters.searchQuery.toLowerCase();
+        filteredUsers = users.filter(user =>
+          user.displayName.toLowerCase().includes(searchLower) ||
+          user.email.toLowerCase().includes(searchLower) ||
+          user.bio?.toLowerCase().includes(searchLower)
+        );
+      }
+
+      return { users: filteredUsers, total };
+    } catch (error) {
+      logger.error('Error getting users:', error);
+      throw new Error('Failed to get users');
+    }
+  }
+
+  /**
+   * Get user profile (public information)
+   */
+  static async getUserProfile(userId: string): Promise<UserProfile | null> {
+    try {
+      const user = await this.getUserById(userId);
       
-      // Update user document
-      return await this.updateUser(uid, { role, permissions });
+      if (!user) {
+        return null;
+      }
+
+      return {
+        id: user.id,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        bio: user.bio,
+        location: user.location,
+        website: user.website,
+        socialLinks: user.socialLinks,
+        verification: user.verification,
+        stats: user.stats,
+        isOnline: user.isOnline,
+        lastSeen: user.lastSeen
+      };
     } catch (error) {
-      console.error('Error updating user role:', error);
-      throw new Error('Failed to update user role');
-    }
-  }
-
-  /**
-   * Get users by role
-   */
-  async getUsersByRole(role: UserRole, limit: number = 50): Promise<User[]> {
-    try {
-      const snapshot = await this.collection
-        .where('role', '==', role)
-        .where('isActive', '==', true)
-        .limit(limit)
-        .get();
-
-      return snapshot.docs.map(doc => doc.data() as User);
-    } catch (error) {
-      console.error('Error fetching users by role:', error);
-      throw new Error('Failed to fetch users by role');
-    }
-  }
-
-  /**
-   * Search users
-   */
-  async searchUsers(query: string, limit: number = 20): Promise<User[]> {
-    try {
-      // Note: Firestore doesn't support full-text search natively
-      // This is a simple prefix search on displayName
-      const snapshot = await this.collection
-        .where('isActive', '==', true)
-        .orderBy('displayName')
-        .startAt(query)
-        .endAt(query + '\uf8ff')
-        .limit(limit)
-        .get();
-
-      return snapshot.docs.map(doc => doc.data() as User);
-    } catch (error) {
-      console.error('Error searching users:', error);
-      throw new Error('Failed to search users');
+      logger.error(`Error getting user profile ${userId}:`, error);
+      return null;
     }
   }
 
   /**
    * Update user stats
    */
-  async updateUserStats(uid: string, stats: Partial<UserStats>): Promise<void> {
+  static async updateUserStats(
+    userId: string,
+    statUpdates: Partial<User['stats']>
+  ): Promise<void> {
     try {
-      const user = await this.getUserById(uid);
-      if (!user) {
-        throw new Error('User not found');
-      }
+      const updates: any = { updatedAt: new Date() };
+      
+      Object.entries(statUpdates).forEach(([key, value]) => {
+        if (typeof value === 'number') {
+          updates[`stats.${key}`] = firestore.FieldValue.increment(value);
+        }
+      });
 
-      const updatedStats: UserStats = {
-        totalSessions: user.stats?.totalSessions || 0,
-        completedSessions: user.stats?.completedSessions || 0,
-        totalPrototypes: user.stats?.totalPrototypes || 0,
-        totalProducts: user.stats?.totalProducts || 0,
-        totalFeedback: user.stats?.totalFeedback || 0,
-        averageRating: user.stats?.averageRating || 0,
-        memberSince: user.stats?.memberSince || new Date(),
-        ...stats
-      };
-
-      await this.updateUser(uid, { stats: updatedStats });
+      await firestore.collection(this.collection).doc(userId).update(updates);
     } catch (error) {
-      console.error('Error updating user stats:', error);
+      logger.error(`Error updating user stats ${userId}:`, error);
       throw new Error('Failed to update user stats');
     }
   }
 
   /**
-   * Get user with Firebase Auth data
+   * Update user preferences
    */
-  async getUserWithAuthData(uid: string): Promise<User & { authData?: any }> {
+  static async updateUserPreferences(
+    userId: string,
+    preferences: Partial<User['preferences']>
+  ): Promise<void> {
     try {
-      const [user, authRecord] = await Promise.all([
-        this.getUserById(uid),
-        this.auth.getUser(uid)
-      ]);
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      return {
-        ...user,
-        authData: {
-          emailVerified: authRecord.emailVerified,
-          disabled: authRecord.disabled,
-          customClaims: authRecord.customClaims
+      const updates: any = { updatedAt: new Date() };
+      
+      // Deep merge preferences
+      Object.entries(preferences).forEach(([category, settings]) => {
+        if (typeof settings === 'object') {
+          Object.entries(settings).forEach(([key, value]) => {
+            updates[`preferences.${category}.${key}`] = value;
+          });
         }
-      };
+      });
+
+      await firestore.collection(this.collection).doc(userId).update(updates);
     } catch (error) {
-      console.error('Error fetching user with auth data:', error);
-      throw new Error('Failed to fetch user with auth data');
+      logger.error(`Error updating user preferences ${userId}:`, error);
+      throw new Error('Failed to update user preferences');
     }
   }
 
   /**
-   * Bulk update users
+   * Update user online status
    */
-  async bulkUpdateUsers(updates: Array<{ uid: string; updates: Partial<User> }>): Promise<void> {
+  static async updateOnlineStatus(
+    userId: string,
+    isOnline: boolean,
+    presenceStatus?: User['presenceStatus'],
+    presenceActivity?: string
+  ): Promise<void> {
     try {
-      const batch = this.db.batch();
-      
-      updates.forEach(({ uid, updates: userUpdates }) => {
-        const docRef = this.collection.doc(uid);
-        batch.update(docRef, {
-          ...userUpdates,
-          updatedAt: new Date()
-        });
-      });
+      const updates: any = {
+        isOnline,
+        lastSeen: new Date(),
+        updatedAt: new Date()
+      };
 
-      await batch.commit();
+      if (presenceStatus) {
+        updates.presenceStatus = presenceStatus;
+      }
+
+      if (presenceActivity !== undefined) {
+        updates.presenceActivity = presenceActivity;
+      }
+
+      await firestore.collection(this.collection).doc(userId).update(updates);
     } catch (error) {
-      console.error('Error bulk updating users:', error);
-      throw new Error('Failed to bulk update users');
+      logger.error(`Error updating online status ${userId}:`, error);
+      throw new Error('Failed to update online status');
+    }
+  }
+
+  /**
+   * Verify user
+   */
+  static async verifyUser(
+    userId: string,
+    verificationBadge?: User['verification']['verificationBadge']
+  ): Promise<void> {
+    try {
+      const updates: any = {
+        'verification.isVerified': true,
+        'verification.verifiedAt': new Date(),
+        updatedAt: new Date()
+      };
+
+      if (verificationBadge) {
+        updates['verification.verificationBadge'] = verificationBadge;
+      }
+
+      await firestore.collection(this.collection).doc(userId).update(updates);
+
+      logger.info(`User verified: ${userId}`);
+    } catch (error) {
+      logger.error(`Error verifying user ${userId}:`, error);
+      throw new Error('Failed to verify user');
+    }
+  }
+
+  /**
+   * Log user activity
+   */
+  static async logActivity(
+    userId: string,
+    type: UserActivity['type'],
+    description: string,
+    metadata?: Record<string, any>,
+    ipAddress?: string,
+    userAgent?: string
+  ): Promise<void> {
+    try {
+      const activityData: Omit<UserActivity, 'id'> = {
+        userId,
+        type,
+        description,
+        metadata,
+        ipAddress,
+        userAgent,
+        timestamp: new Date()
+      };
+
+      await firestore.collection('userActivity').add(activityData);
+    } catch (error) {
+      logger.error(`Error logging user activity ${userId}:`, error);
+    }
+  }
+
+  /**
+   * Get user activity
+   */
+  static async getUserActivity(
+    userId: string,
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<UserActivity[]> {
+    try {
+      const activitySnapshot = await firestore
+        .collection('userActivity')
+        .where('userId', '==', userId)
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .offset(offset)
+        .get();
+
+      return activitySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as UserActivity[];
+    } catch (error) {
+      logger.error(`Error getting user activity ${userId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Search users
+   */
+  static async searchUsers(
+    query: string,
+    limit: number = 20,
+    filters: {
+      role?: UserRole;
+      isVerified?: boolean;
+    } = {}
+  ): Promise<User[]> {
+    try {
+      // This is a simplified search implementation
+      // In production, you might want to use a dedicated search service like Algolia
+      
+      let firestoreQuery = firestore
+        .collection(this.collection)
+        .where('deletedAt', '==', null);
+
+      if (filters.role) {
+        firestoreQuery = firestoreQuery.where('role', '==', filters.role);
+      }
+
+      if (filters.isVerified !== undefined) {
+        firestoreQuery = firestoreQuery.where('verification.isVerified', '==', filters.isVerified);
+      }
+
+      const snapshot = await firestoreQuery.limit(100).get(); // Get more for client-side filtering
+
+      const users = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as User[];
+
+      // Client-side search filtering
+      const searchLower = query.toLowerCase();
+      const filteredUsers = users.filter(user =>
+        user.displayName.toLowerCase().includes(searchLower) ||
+        user.email.toLowerCase().includes(searchLower) ||
+        user.bio?.toLowerCase().includes(searchLower)
+      );
+
+      return filteredUsers.slice(0, limit);
+    } catch (error) {
+      logger.error('Error searching users:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get online users count
+   */
+  static async getOnlineUsersCount(): Promise<number> {
+    try {
+      const onlineUsersSnapshot = await firestore
+        .collection(this.collection)
+        .where('isOnline', '==', true)
+        .where('deletedAt', '==', null)
+        .count()
+        .get();
+
+      return onlineUsersSnapshot.data().count;
+    } catch (error) {
+      logger.error('Error getting online users count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get user statistics
+   */
+  static async getUserStatistics(): Promise<{
+    totalUsers: number;
+    activeUsers: number;
+    verifiedUsers: number;
+    usersByRole: Record<UserRole, number>;
+    newUsersToday: number;
+  }> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Get total users
+      const totalUsersSnapshot = await firestore
+        .collection(this.collection)
+        .where('deletedAt', '==', null)
+        .count()
+        .get();
+
+      // Get active users (online in last 24 hours)
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const activeUsersSnapshot = await firestore
+        .collection(this.collection)
+        .where('lastSeen', '>=', yesterday)
+        .where('deletedAt', '==', null)
+        .count()
+        .get();
+
+      // Get verified users
+      const verifiedUsersSnapshot = await firestore
+        .collection(this.collection)
+        .where('verification.isVerified', '==', true)
+        .where('deletedAt', '==', null)
+        .count()
+        .get();
+
+      // Get new users today
+      const newUsersTodaySnapshot = await firestore
+        .collection(this.collection)
+        .where('createdAt', '>=', today)
+        .where('deletedAt', '==', null)
+        .count()
+        .get();
+
+      // Get users by role
+      const usersByRole: Record<UserRole, number> = {} as Record<UserRole, number>;
+      
+      for (const role of Object.values(UserRole)) {
+        const roleUsersSnapshot = await firestore
+          .collection(this.collection)
+          .where('role', '==', role)
+          .where('deletedAt', '==', null)
+          .count()
+          .get();
+        
+        usersByRole[role] = roleUsersSnapshot.data().count;
+      }
+
+      return {
+        totalUsers: totalUsersSnapshot.data().count,
+        activeUsers: activeUsersSnapshot.data().count,
+        verifiedUsers: verifiedUsersSnapshot.data().count,
+        usersByRole,
+        newUsersToday: newUsersTodaySnapshot.data().count
+      };
+    } catch (error) {
+      logger.error('Error getting user statistics:', error);
+      throw new Error('Failed to get user statistics');
     }
   }
 }
 
-export const userModel = new UserModel();
-export default userModel; 
+export const userModel = UserModel;
+export default UserModel;

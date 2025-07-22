@@ -1,11 +1,10 @@
-import React from 'react';
 import { withLazyLoading } from '../components/LazyScreen';
 
 // Lazy load all screens to reduce initial bundle size
 export const HomeScreen = withLazyLoading(() => import('./Home/HomeScreen'));
-export const LoginScreen = withLazyLoading(() => import('./Auth/LoginScreen'));
-export const RegisterScreen = withLazyLoading(() => import('./Auth/RegisterScreen'));
-export const SplashScreen = withLazyLoading(() => import('./Auth/SplashScreen'));
+export const LoginScreen = withLazyLoading(() => import('./Auth/Login'));
+export const RegisterScreen = withLazyLoading(() => import('./Auth/Register'));
+export const SplashScreen = withLazyLoading(() => import('./Auth/Splash'));
 
 export const MentorListScreen = withLazyLoading(() => import('./Mentors/MentorList'));
 export const MentorProfileScreen = withLazyLoading(() => import('./Mentors/MentorProfile'));

@@ -1,13 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Mentor } from '../types';
 
 interface MentorCardProps {
-  mentor: {
-    id: string;
-    name: string;
-    title: string;
-    bio: string;
-  };
+  mentor: Mentor;
 }
 
 const MentorCard: React.FC<MentorCardProps> = ({ mentor }) => {
